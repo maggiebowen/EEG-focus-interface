@@ -9,7 +9,30 @@ interface FarmViewProps {
 }
 
 export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elapsedMs }) => {
-    // Corn growth logic
+    const elapsedSeconds = Math.floor(elapsedMs / 1000);
+
+    // Helper for staggered growth
+    const getStage = (elapsedSeconds: number, index: number, growthTime: number, stagger: number, maxStage: number) => {
+        const localTime = Math.max(0, elapsedSeconds - index * stagger);
+        // Calculate stage: (localTime / growthTime) gives 0 to 1 progress. 
+        // Multiply by (maxStage + 1) to map to 0..maxStage indices.
+        // However, the prompt logic "Math.floor((localTime / growthTime) * (maxStage + 1))" implies it reaches maxStage+1 at end of growthTime?
+        // Let's stick exactly to the prompt's logic but clamp it.
+        // Actually, usually growth is: stage = floor(progress * steps).
+        // If growthTime is "time to reach full maturity", then at growthTime it should be maxStage.
+        // Let's use the prompt's formula exactly:
+        const raw = Math.floor((localTime / growthTime) * (maxStage + 1));
+        return Math.min(maxStage, raw);
+    };
+
+    // Constants
+    const FARM_SIZE = 600;
+    const FENCE_V_WIDTH = 70;
+    const FENCE_V_HEIGHT = 500;
+    const FENCE_H_WIDTH = 500;
+    const FENCE_H_HEIGHT = 70;
+
+    // Corn Config
     const cornImages = [
         "/assets/corn1.png",
         "/assets/corn2.png",
@@ -17,8 +40,29 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
         "/assets/corn4.png",
         "/assets/corn5.png"
     ];
-    // Stage 0 to 4 based on time (approx 20s to full growth)
-    const stage = Math.min(4, Math.floor((elapsedMs / 1000) / 4));
+    const CORN_COUNT = 4;
+    const CORN_GROWTH_SEC = 20;
+    const CORN_STAGGER_SEC = 3;
+    const CORN_MAX_STAGE = 4;
+    const cornY = 110;
+    const cornXStart = 110;
+    const cornSpacing = 100;
+
+    // Cherry Config
+    const cherryImages = [
+        "/assets/cherry1.png",
+        "/assets/cherry2.png",
+        "/assets/cherry3.png",
+        "/assets/cherry4.png",
+        "/assets/cherry5.png"
+    ];
+    const CHERRY_COUNT = 4;
+    const CHERRY_GROWTH_SEC = 20;
+    const CHERRY_STAGGER_SEC = 3;
+    const CHERRY_MAX_STAGE = 4;
+    const cherryY_Prompt = cornY + 90;
+    const cherryXStart = cornXStart;
+    const cherrySpacing = cornSpacing;
 
     return (
         <div className="w-full h-full relative group overflow-hidden"
@@ -32,8 +76,8 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
             {/* Grass Container (600x600 Centered) */}
             <div style={{
                 position: "absolute",
-                width: 600,
-                height: 600,
+                width: FARM_SIZE,
+                height: FARM_SIZE,
                 left: "50%",
                 top: "50%",
                 transform: "translate(-50%, -50%)"
@@ -44,8 +88,8 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                     alt="Grass"
                     style={{
                         position: "absolute",
-                        width: 600,
-                        height: 600,
+                        width: FARM_SIZE,
+                        height: FARM_SIZE,
                         left: 0,
                         top: 0,
                         imageRendering: "pixelated"
@@ -53,77 +97,73 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                 />
 
                 {/* Fences */}
-                {/* Left Fence */}
-                <img
-                    src="/assets/Fences-vertical.png"
-                    alt="Fence Left"
-                    style={{
-                        position: "absolute",
-                        width: "70px",
-                        height: "500px",
-                        left: "25px",
-                        top: "50px",
-                        zIndex: 5,
-                        imageRendering: "pixelated"
-                    }}
-                />
-                {/* Right Fence */}
-                <img
-                    src="/assets/Fences-vertical.png"
-                    alt="Fence Right"
-                    style={{
-                        position: "absolute",
-                        width: "70px",
-                        height: "500px",
-                        left: `${600 - 70 - 25} px`, // 505px
-                        top: "50px",
-                        zIndex: 5,
-                        imageRendering: "pixelated"
-                    }}
-                />
-                {/* Top Fence */}
-                <img
-                    src="/assets/Fences-horizontal.png"
-                    alt="Fence Top"
-                    style={{
-                        position: "absolute",
-                        width: "500px",
-                        height: "70px",
-                        left: "50px",
-                        top: "25px",
-                        zIndex: 5,
-                        imageRendering: "pixelated"
-                    }}
-                />
-                {/* Bottom Fence */}
-                <img
-                    src="/assets/Fences-horizontal.png"
-                    alt="Fence Bottom"
-                    style={{
-                        position: "absolute",
-                        width: "500px",
-                        height: "70px",
-                        left: "50px",
-                        top: `${600 - 70 - 25} px`, // 505px
-                        zIndex: 5,
-                        imageRendering: "pixelated"
-                    }}
-                />
+                {/* Left */}
+                <img src="/assets/Fences-vertical.png" style={{
+                    position: "absolute", width: FENCE_V_WIDTH, height: FENCE_V_HEIGHT,
+                    left: 0, top: (FARM_SIZE - FENCE_V_HEIGHT) / 2,
+                    imageRendering: "pixelated", zIndex: 5
+                }} />
 
-                {/* Corn Growth */}
-                <img
-                    src={cornImages[stage]}
-                    alt={`Corn Stage ${stage + 1} `}
-                    style={{
-                        position: "absolute",
-                        width: 64,
-                        height: 64,
-                        left: 110,
-                        top: 90,
-                        zIndex: 10,
-                        imageRendering: "pixelated"
-                    }}
-                />
+                {/* Right */}
+                <img src="/assets/Fences-vertical.png" style={{
+                    position: "absolute", width: FENCE_V_WIDTH, height: FENCE_V_HEIGHT,
+                    left: FARM_SIZE - FENCE_V_WIDTH, top: (FARM_SIZE - FENCE_V_HEIGHT) / 2,
+                    imageRendering: "pixelated", zIndex: 5
+                }} />
+
+                {/* Top */}
+                <img src="/assets/Fences-horizontal.png" style={{
+                    position: "absolute", width: FENCE_H_WIDTH, height: FENCE_H_HEIGHT,
+                    left: (FARM_SIZE - FENCE_H_WIDTH) / 2, top: 0,
+                    imageRendering: "pixelated", zIndex: 5
+                }} />
+
+                {/* Bottom */}
+                <img src="/assets/Fences-horizontal.png" style={{
+                    position: "absolute", width: FENCE_H_WIDTH, height: FENCE_H_HEIGHT,
+                    left: (FARM_SIZE - FENCE_H_WIDTH) / 2, top: FARM_SIZE - FENCE_H_HEIGHT,
+                    imageRendering: "pixelated", zIndex: 5
+                }} />
+
+                {/* Corn Row */}
+                {Array.from({ length: CORN_COUNT }).map((_, i) => {
+                    const stage = getStage(elapsedSeconds, i, CORN_GROWTH_SEC, CORN_STAGGER_SEC, CORN_MAX_STAGE);
+                    return (
+                        <img
+                            key={"corn-" + i}
+                            src={cornImages[stage]}
+                            alt={`Corn ${i}`}
+                            style={{
+                                position: "absolute",
+                                width: 64, height: 64,
+                                left: cornXStart + i * cornSpacing,
+                                top: cornY,
+                                imageRendering: "pixelated",
+                                zIndex: 10
+                            }}
+                        />
+                    );
+                })}
+
+                {/* Cherry Row */}
+                {Array.from({ length: CHERRY_COUNT }).map((_, i) => {
+                    const stage = getStage(elapsedSeconds, i, CHERRY_GROWTH_SEC, CHERRY_STAGGER_SEC, CHERRY_MAX_STAGE);
+                    return (
+                        <img
+                            key={"cherry-" + i}
+                            src={cherryImages[stage]}
+                            alt={`Cherry ${i}`}
+                            style={{
+                                position: "absolute",
+                                width: 64, height: 64,
+                                left: cherryXStart + i * cherrySpacing,
+                                top: cherryY_Prompt,
+                                imageRendering: "pixelated",
+                                zIndex: 10
+                            }}
+                        />
+                    );
+                })}
             </div>
 
             {/* Start/Stop Button Overlay */}
