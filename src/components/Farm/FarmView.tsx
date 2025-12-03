@@ -1,3 +1,4 @@
+
 import React from 'react';
 import clsx from 'clsx';
 
@@ -8,33 +9,121 @@ interface FarmViewProps {
 }
 
 export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elapsedMs }) => {
-    const SESSION_DURATION_MS = 25 * 60 * 1000; // 25 minutes
-    const progress = Math.min(1, elapsedMs / SESSION_DURATION_MS);
+    // Corn growth logic
+    const cornImages = [
+        "/assets/corn1.png",
+        "/assets/corn2.png",
+        "/assets/corn3.png",
+        "/assets/corn4.png",
+        "/assets/corn5.png"
+    ];
+    // Stage 0 to 4 based on time (approx 20s to full growth)
+    const stage = Math.min(4, Math.floor((elapsedMs / 1000) / 4));
 
     return (
-        <div className="w-full h-full relative group">
-
-            {/* Background Layers */}
-            <div className="absolute inset-0">
-                {/* Empty Farm (Base Layer) */}
+        <div className="w-full h-full relative group overflow-hidden"
+            style={{
+                backgroundImage: "url('/assets/Water.png')",
+                backgroundRepeat: "repeat",
+                imageRendering: "pixelated",
+                backgroundSize: "64px 256px"
+            }}
+        >
+            {/* Grass Container (600x600 Centered) */}
+            <div style={{
+                position: "absolute",
+                width: 600,
+                height: 600,
+                left: "50%",
+                top: "50%",
+                transform: "translate(-50%, -50%)"
+            }}>
+                {/* Grass Background */}
                 <img
-                    src="/assets/farm-empty.png"
-                    alt="Empty Farm"
-                    className="w-full h-full object-cover absolute inset-0"
+                    src="/assets/focus-farm-grass.png"
+                    alt="Grass"
+                    style={{
+                        position: "absolute",
+                        width: 600,
+                        height: 600,
+                        left: 0,
+                        top: 0,
+                        imageRendering: "pixelated"
+                    }}
                 />
 
-                {/* Full Farm (Overlay Layer with Opacity Transition) */}
+                {/* Fences */}
+                {/* Left Fence */}
                 <img
-                    src="/assets/farm-full.png"
-                    alt="Full Farm"
-                    className="w-full h-full object-cover absolute inset-0 transition-opacity duration-100 ease-linear"
-                    style={{ opacity: progress }}
+                    src="/assets/Fences-vertical.png"
+                    alt="Fence Left"
+                    style={{
+                        position: "absolute",
+                        width: "70px",
+                        height: "500px",
+                        left: "25px",
+                        top: "50px",
+                        zIndex: 5,
+                        imageRendering: "pixelated"
+                    }}
                 />
-            </div>
+                {/* Right Fence */}
+                <img
+                    src="/assets/Fences-vertical.png"
+                    alt="Fence Right"
+                    style={{
+                        position: "absolute",
+                        width: "70px",
+                        height: "500px",
+                        left: `${600 - 70 - 25} px`, // 505px
+                        top: "50px",
+                        zIndex: 5,
+                        imageRendering: "pixelated"
+                    }}
+                />
+                {/* Top Fence */}
+                <img
+                    src="/assets/Fences-horizontal.png"
+                    alt="Fence Top"
+                    style={{
+                        position: "absolute",
+                        width: "500px",
+                        height: "70px",
+                        left: "50px",
+                        top: "25px",
+                        zIndex: 5,
+                        imageRendering: "pixelated"
+                    }}
+                />
+                {/* Bottom Fence */}
+                <img
+                    src="/assets/Fences-horizontal.png"
+                    alt="Fence Bottom"
+                    style={{
+                        position: "absolute",
+                        width: "500px",
+                        height: "70px",
+                        left: "50px",
+                        top: `${600 - 70 - 25} px`, // 505px
+                        zIndex: 5,
+                        imageRendering: "pixelated"
+                    }}
+                />
 
-            {/* Overlay info - Crystals REMOVED */}
-            <div className="absolute top-6 left-6 bg-black/40 backdrop-blur-md rounded-full px-4 py-2 flex gap-4 text-sm font-medium border border-white/10 z-10">
-                <span className="text-emerald-400">Plants: {Math.floor(progress * 100)}%</span>
+                {/* Corn Growth */}
+                <img
+                    src={cornImages[stage]}
+                    alt={`Corn Stage ${stage + 1} `}
+                    style={{
+                        position: "absolute",
+                        width: 64,
+                        height: 64,
+                        left: 110,
+                        top: 90,
+                        zIndex: 10,
+                        imageRendering: "pixelated"
+                    }}
+                />
             </div>
 
             {/* Start/Stop Button Overlay */}
