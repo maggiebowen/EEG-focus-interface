@@ -6,9 +6,9 @@
   font-family: 'Pixelify Sans', sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0a0a0a;
+  color-scheme: light;
+  color: rgba(0, 0, 0, 0.87);
+  background-color: #1b436c;
 }
 
 body {
