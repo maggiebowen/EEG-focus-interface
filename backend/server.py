@@ -33,11 +33,16 @@ current_state = NeuroState.IDLE
 mu_baseline = 0.0     
 sigma_baseline = 1.0  
 calibration_buffer = [] 
+# Sliding buffer for 10s window and per-second ticks
+window_buffer = None  # shape (n_channels, n_samples)
+WINDOW_SECONDS = 10
+TIME_STEP_SECONDS = 1
 
 # Parametri Runtime
 current_z_score = 0.0
 calibration_start_time = 0
-CALIBRATION_DURATION = 15 
+# Baseline: first 10 seconds of buffer
+CALIBRATION_DURATION = 10 
 
 class KnightBoardServer:
     def __init__(self, serial_port: str, num_channels: int):
@@ -96,28 +101,31 @@ def compute_alpha_power(eeg_window, fs):
     alpha_powers = []
 
     for ch in range(n_channels):
-        # Convertiamo Volts -> Microvolts (uV) per avere numeri leggibili
-        channel_data = eeg_window[ch] * 1e6 
-        
-        # 1. Detrending
+        channel_data = eeg_window[ch] * 1e6
         channel_data = signal.detrend(channel_data)
-        
-        # 2. Welch PSD
         freqs, psd = signal.welch(channel_data, fs, nperseg=int(fs), noverlap=int(fs/2))
-        
-        # 3. Estrazione Banda Alpha (8-12 Hz)
-        idx_alpha = np.logical_and(freqs >= 8, freqs <= 12)
-        
-        # 4. Integrazione Trapezoidale (FIXED)
-        # Usiamo np.trapz(y, x). y = psd selezionata, x = frequenze selezionate
-        if np.any(idx_alpha): # Controllo di sicurezza se l'array non è vuoto
-            alpha_power = np.trapz(psd[idx_alpha], freqs[idx_alpha])
-        else:
-            alpha_power = 0.0
-            
+        idx_alpha = (freqs >= 8) & (freqs <= 12)
+        alpha_power = float(np.trapz(psd[idx_alpha], freqs[idx_alpha])) if np.any(idx_alpha) else 0.0
         alpha_powers.append(alpha_power)
-        
-    return np.mean(alpha_powers)
+
+    return np.array(alpha_powers)
+
+
+def detect_bad_eeg_channels(data):
+   
+    var_low_thresh = 1e-6
+    var_outlier_thresh = 0.5
+
+    vars_ = np.var(data, axis=1, ddof=0)
+    q1 = np.percentile(vars_, 25)
+    q3 = np.percentile(vars_, 75)
+    iqr_val = q3 - q1
+    lower_bound = q1 - var_outlier_thresh * iqr_val
+    upper_bound = q3 + var_outlier_thresh * iqr_val
+
+    bad_mask = (vars_ < max(var_low_thresh, lower_bound)) | (vars_ > upper_bound)
+    bad_idx = np.where(bad_mask)[0].tolist()
+    return bad_idx
 
 def stream_data_loop():
     global board, streaming, current_state
@@ -125,24 +133,50 @@ def stream_data_loop():
     global current_z_score
     
     print("Neurofeedback Loop Started")
-    update_interval = 0.5 
+    update_interval = 0.1 
+    last_compute_ts = 0.0
     
     while streaming:
         start_loop = time.time()
         
         if board and board.is_streaming:
-            eeg_window = board.get_window_data(duration_sec=2)
+            # Pull 1s of new data and maintain 10s sliding window
+            eeg_chunk = board.get_window_data(duration_sec=TIME_STEP_SECONDS)
             
-            if eeg_window is not None:
+            if eeg_chunk is not None:
                 fs = board.sampling_rate
-                
-                # --- PREPROCESSING (Brainflow Filter) ---
-                for i in range(eeg_window.shape[0]):
-                    # Filtro 2-30Hz circa (Center 16, Width 28 -> 2Hz - 30Hz)
-                    DataFilter.perform_bandpass(eeg_window[i], fs, 16.0, 28.0, 4, FilterTypes.BUTTERWORTH.value, 0)
+                # Initialize buffer
+                if window_buffer is None:
+                    # allocate n_channels x (fs*WINDOW_SECONDS)
+                    total_samples = int(fs * WINDOW_SECONDS)
+                    globals()['window_buffer'] = np.zeros((eeg_chunk.shape[0], total_samples), dtype=np.float32)
+                    last_compute_ts = time.time()
+                # Shift and append chunk to maintain sliding window
+                chunk_len = eeg_chunk.shape[1]
+                if chunk_len > window_buffer.shape[1]:
+                    eeg_chunk = eeg_chunk[:, -window_buffer.shape[1]:]
+                    chunk_len = eeg_chunk.shape[1]
+                window_buffer[:, :-chunk_len] = window_buffer[:, chunk_len:]
+                window_buffer[:, -chunk_len:] = eeg_chunk
 
-                # --- CALCOLO ALPHA ---
-                current_alpha = compute_alpha_power(eeg_window, fs)
+                # Preprocessing: bandpass 2-30Hz per channel on full window
+                for i in range(window_buffer.shape[0]):
+                    DataFilter.perform_bandpass(window_buffer[i], fs, 16.0, 28.0, 4, FilterTypes.BUTTERWORTH.value, 0)
+
+                # Detect bad channels on current 10s window
+                bad_channels = detect_bad_eeg_channels(window_buffer)
+                good_mask = np.ones(window_buffer.shape[0], dtype=bool)
+                if bad_channels:
+                    for idx in bad_channels:
+                        if 0 <= idx < good_mask.size:
+                            good_mask[idx] = False
+
+                # Compute once per second on the 10s window
+                now = time.time()
+                if (now - last_compute_ts) >= TIME_STEP_SECONDS:
+                    last_compute_ts = now
+                    alpha_per_ch = compute_alpha_power(window_buffer, fs)
+                    current_alpha = float(np.mean(alpha_per_ch[good_mask])) if np.any(good_mask) else float(np.mean(alpha_per_ch))
                 
                 # --- LOGICA STATI ---
                 
@@ -169,27 +203,25 @@ def stream_data_loop():
                             current_state = NeuroState.IDLE
 
                 elif current_state == NeuroState.RUNNING:
-                    # Z-Score
-                    z_raw = (current_alpha - mu_baseline) / (sigma_baseline + 1e-6)
-                    z_clamped = max(-2.0, min(z_raw, 3.0))
-                    
-                    alpha_smooth = 0.2
-                    current_z_score = (alpha_smooth * z_clamped) + ((1 - alpha_smooth) * current_z_score)
-                    
-                    # UI Mapping
-                    ui_score = (current_z_score / 4.0) + 0.5 
-                    ui_score = max(0.0, min(ui_score, 1.0))
+                    # Z-Score on per-second compute only
+                    if 'current_alpha' in locals():
+                        z_raw = (current_alpha - mu_baseline) / (sigma_baseline + 1e-6)
+                        z_clamped = max(-2.0, min(z_raw, 3.0))
+                        alpha_smooth = 0.2
+                        current_z_score = (alpha_smooth * z_clamped) + ((1 - alpha_smooth) * current_z_score)
+                        ui_score = (current_z_score / 4.0) + 0.5
+                        ui_score = max(0.0, min(ui_score, 1.0))
 
-                    payload = {
-                        'timestamp': time.time(),
-                        'focus_score': ui_score,
-                        'z_score': current_z_score,
-                        'raw_alpha': current_alpha,
-                        'state': 'RUNNING'
-                    }
-                    
-                    print(f"Alpha: {current_alpha:.2f} uV | Z: {current_z_score:.2f} | UI: {ui_score:.2f}")
-                    socketio.emit('eeg_metric', payload)
+                        payload = {
+                            'timestamp': time.time(),
+                            'focus_score': ui_score,
+                            'z_score': current_z_score,
+                            'raw_alpha': current_alpha,
+                            'bad_channels': bad_channels,
+                            'state': 'RUNNING'
+                        }
+                        print(f"Alpha(mean good): {current_alpha:.2f} uV^2 | Z: {current_z_score:.2f} | UI: {ui_score:.2f} | Bad: {bad_channels}")
+                        socketio.emit('eeg_metric', payload)
         
         elapsed_loop = time.time() - start_loop
         time.sleep(max(0, update_interval - elapsed_loop))
