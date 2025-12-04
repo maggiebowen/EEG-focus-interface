@@ -40,3 +40,4 @@ env/
 
 # BrainFlow library source code (install via pip instead)
 backend/brainflow/
+node_modules

@@ -1,6 +1,6 @@
 """
 Flask server implementing Scientific Alpha Neurofeedback Protocol (Z-Score).
-FIXED: Corrected np.trapz syntax in compute_alpha_power.
+FIXED: Implemented Sigmoid Mapping for 0-100% Focus Score.
 """
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -159,7 +159,7 @@ def stream_data_loop():
                 if window_buffer is None:
                     # allocate n_channels x (fs*WINDOW_SECONDS)
                     total_samples = int(fs * WINDOW_SECONDS)
-                    globals()['window_buffer'] = np.zeros((eeg_chunk.shape[0], total_samples), dtype=np.float32)
+                    globals()['window_buffer'] = np.zeros((eeg_chunk.shape[0], total_samples), dtype=np.float64)
                     last_compute_ts = time.time()
                 # Shift and append chunk to maintain sliding window
                 chunk_len = eeg_chunk.shape[1]
@@ -183,6 +183,8 @@ def stream_data_loop():
 
                 # Compute once per second on the 10s window
                 now = time.time()
+                current_alpha = None # Reset per sicurezza
+                
                 if (now - last_compute_ts) >= TIME_STEP_SECONDS:
                     last_compute_ts = now
                     alpha_per_ch = compute_alpha_power(window_buffer, fs)
@@ -191,46 +193,59 @@ def stream_data_loop():
                 # --- LOGICA STATI ---
                 
                 if current_state == NeuroState.CALIBRATING:
-                    calibration_buffer.append(current_alpha)
-                    elapsed = time.time() - calibration_start_time
-                    progress = min(elapsed / CALIBRATION_DURATION, 1.0)
-                    
-                    socketio.emit('calibration_progress', {'progress': progress})
-                    
-                    if int(elapsed * 10) % 10 == 0:
-                        print(f"Calibrating... {int(elapsed)}s (Current Alpha: {current_alpha:.2f} uV^2)")
-                    
-                    if elapsed >= CALIBRATION_DURATION:
-                        if len(calibration_buffer) > 0:
-                            data_clean = np.array(calibration_buffer)
-                            mu_baseline = np.mean(data_clean)
-                            sigma_baseline = np.std(data_clean)
-                            
-                            print(f"BASELINE ACQUIRED: μ={mu_baseline:.2f}, σ={sigma_baseline:.2f}")
-                            current_state = NeuroState.RUNNING
-                            socketio.emit('calibration_done', {'mu': mu_baseline, 'sigma': sigma_baseline})
-                        else:
-                            current_state = NeuroState.IDLE
+                    if current_alpha is not None: # Solo se abbiamo calcolato un nuovo dato
+                        calibration_buffer.append(current_alpha)
+                        elapsed = time.time() - calibration_start_time
+                        progress = min(elapsed / CALIBRATION_DURATION, 1.0)
+                        
+                        socketio.emit('calibration_progress', {'progress': progress})
+                        
+                        if int(elapsed * 10) % 10 == 0:
+                            print(f"Calibrating... {int(elapsed)}s (Current Alpha: {current_alpha:.2f} uV^2)")
+                        
+                        if elapsed >= CALIBRATION_DURATION:
+                            if len(calibration_buffer) > 0:
+                                data_clean = np.array(calibration_buffer)
+                                mu_baseline = np.mean(data_clean)
+                                sigma_baseline = np.std(data_clean)
+                                
+                                print(f"BASELINE ACQUIRED: μ={mu_baseline:.2f}, σ={sigma_baseline:.2f}")
+                                current_state = NeuroState.RUNNING
+                                socketio.emit('calibration_done', {'mu': mu_baseline, 'sigma': sigma_baseline})
+                            else:
+                                current_state = NeuroState.IDLE
 
                 elif current_state == NeuroState.RUNNING:
                     # Z-Score on per-second compute only
-                    if 'current_alpha' in locals():
+                    if current_alpha is not None:
+                        # 1. Calcolo Z-Score grezzo
                         z_raw = (current_alpha - mu_baseline) / (sigma_baseline + 1e-6)
-                        z_clamped = max(-2.0, min(z_raw, 3.0))
+                        
+                        # 2. Clamping morbido (esteso a -2 / +2 per la sigmoide)
+                        z_clamped = max(-2.0, min(z_raw, 2.0))
+                        
+                        # 3. Smoothing esponenziale
                         alpha_smooth = 0.2
                         current_z_score = (alpha_smooth * z_clamped) + ((1 - alpha_smooth) * current_z_score)
-                        ui_score = (current_z_score / 4.0) + 0.5
-                        ui_score = max(0.0, min(ui_score, 1.0))
-
+                        
+                        # --- MAPPING SIGMOIDE (0-100%) ---
+                        slope = 1.0 # Regola qui la difficoltà (0.8 = difficile, 1.5 = facile)
+                        
+                        # Funzione Sigmoide
+                        sigmoid_val = 1 / (1 + np.exp(-slope * current_z_score))
+                        
+                        # Conversione in intero 0-100
+                        percent_score = int(sigmoid_val * 100)
+                        
                         payload = {
                             'timestamp': time.time(),
-                            'focus_score': ui_score,
+                            'focus_score': percent_score, # Ora è 0-100
                             'z_score': current_z_score,
                             'raw_alpha': current_alpha,
                             'bad_channels': bad_channels,
                             'state': 'RUNNING'
                         }
-                        print(f"Alpha(mean good): {current_alpha:.2f} uV^2 | Z: {current_z_score:.2f} | UI: {ui_score:.2f} | Bad: {bad_channels}")
+                        print(f"Alpha: {current_alpha:.2f} | Z: {current_z_score:.2f} | UI: {percent_score}% | Bad: {bad_channels}")
                         socketio.emit('eeg_metric', payload)
         
         elapsed_loop = time.time() - start_loop
