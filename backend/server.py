@@ -1,5 +1,6 @@
 """
-Flask server with Socket.IO for real-time EEG streaming to React frontend.
+Flask server implementing Scientific Alpha Neurofeedback Protocol (Z-Score).
+FIXED: Corrected np.trapz syntax in compute_alpha_power.
 """
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -7,270 +8,241 @@ from flask_socketio import SocketIO, emit
 import threading
 import time
 import numpy as np
+from scipy import signal
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
-from brainflow.data_filter import DataFilter, FilterTypes, AggOperations, WindowOperations, DetrendOperations
+from brainflow.data_filter import DataFilter, FilterTypes
+import sys
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React frontend
+CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Global board instance
+# --- GLOBAL STATE ---
 board = None
 streaming = False
 stream_thread = None
 
+class NeuroState:
+    IDLE = 0
+    CALIBRATING = 1
+    RUNNING = 2
+
+current_state = NeuroState.IDLE
+
+# Parametri Baseline
+mu_baseline = 0.0     
+sigma_baseline = 1.0  
+calibration_buffer = [] 
+
+# Parametri Runtime
+current_z_score = 0.0
+calibration_start_time = 0
+CALIBRATION_DURATION = 15 
 
 class KnightBoardServer:
     def __init__(self, serial_port: str, num_channels: int):
-        """Initialize Knight Board for server streaming."""
         self.params = BrainFlowInputParams()
         self.params.serial_port = serial_port
         self.num_channels = num_channels
+        try:
+            self.board_shim = BoardShim(BoardIds.NEUROPAWN_KNIGHT_BOARD.value, self.params)
+            self.board_id = self.board_shim.get_board_id()
+            self.eeg_channels = self.board_shim.get_exg_channels(self.board_id)
+            self.sampling_rate = self.board_shim.get_sampling_rate(self.board_id)
+            self.is_streaming = False
+        except Exception as e:
+            raise e
         
-        # Initialize board
-        self.board_shim = BoardShim(BoardIds.NEUROPAWN_KNIGHT_BOARD.value, self.params)
-        self.board_id = self.board_shim.get_board_id()
-        self.eeg_channels = self.board_shim.get_exg_channels(self.board_id)
-        self.sampling_rate = self.board_shim.get_sampling_rate(self.board_id)
-        self.is_streaming = False
-        
-    def start_stream(self, buffer_size: int = 450000, config_value: int = 12):
-        """Start the data stream from the board."""
-        if self.is_streaming:
-            return
-            
+    def start_stream(self):
+        if self.is_streaming: return
         self.board_shim.prepare_session()
-        self.board_shim.start_stream(buffer_size)
-        print(f"Stream started at {self.sampling_rate} Hz")
+        try: self.board_shim.start_stream(450000)
+        except: pass
         time.sleep(2)
         
-        # Configure channels
+        # --- CONFIGURAZIONE CANALI (IMPORTANTE) ---
+        print("Configuring hardware channels...")
         for x in range(1, self.num_channels + 1):
-            time.sleep(0.5)
-            cmd = f"chon_{x}_{config_value}"
-            self.board_shim.config_board(cmd)
-            time.sleep(1)
-            rld = f"rldadd_{x}"
-            self.board_shim.config_board(rld)
-            time.sleep(0.5)
+            try:
+                # chon_ChNumber_Gain (12 = Gain 24x solitamente su ADS1299)
+                self.board_shim.config_board(f"chon_{x}_12")
+                self.board_shim.config_board(f"rldadd_{x}")
+            except: pass
             
         self.is_streaming = True
-        print("Configuration complete!")
         
     def stop_stream(self):
-        """Stop the data stream and release resources."""
-        if not self.is_streaming:
-            return
-            
+        if not self.is_streaming: return
         self.is_streaming = False
-        self.board_shim.stop_stream()
-        self.board_shim.release_session()
-        print("Stream stopped and session released.")
+        try:
+            self.board_shim.stop_stream()
+            self.board_shim.release_session()
+        except: pass
         
-    def get_latest_data(self, num_samples: int = 250):
-        """Get the latest data from the board."""
-        data = self.board_shim.get_board_data()
-        
-        if data.size == 0:
+    def get_window_data(self, duration_sec=2):
+        num_samples = int(self.sampling_rate * duration_sec)
+        data = self.board_shim.get_current_board_data(num_samples)
+        if data.size == 0 or data.shape[1] < num_samples:
             return None
-            
-        eeg_data = data[self.eeg_channels, :]
+        return data[self.eeg_channels, :]
+
+# --- SIGNAL PROCESSING ---
+
+def compute_alpha_power(eeg_window, fs):
+    """
+    Calcola la potenza Alpha in MICROVOLTS^2 utilizzando il metodo di Welch e l'integrazione trapezoidale.
+    """
+    n_channels = eeg_window.shape[0]
+    alpha_powers = []
+
+    for ch in range(n_channels):
+        # Convertiamo Volts -> Microvolts (uV) per avere numeri leggibili
+        channel_data = eeg_window[ch] * 1e6 
         
-        # Get last num_samples if available
-        if eeg_data.shape[1] > num_samples:
-            eeg_data = eeg_data[:, -num_samples:]
+        # 1. Detrending
+        channel_data = signal.detrend(channel_data)
+        
+        # 2. Welch PSD
+        freqs, psd = signal.welch(channel_data, fs, nperseg=int(fs), noverlap=int(fs/2))
+        
+        # 3. Estrazione Banda Alpha (8-12 Hz)
+        idx_alpha = np.logical_and(freqs >= 8, freqs <= 12)
+        
+        # 4. Integrazione Trapezoidale (FIXED)
+        # Usiamo np.trapz(y, x). y = psd selezionata, x = frequenze selezionate
+        if np.any(idx_alpha): # Controllo di sicurezza se l'array non è vuoto
+            alpha_power = np.trapz(psd[idx_alpha], freqs[idx_alpha])
+        else:
+            alpha_power = 0.0
             
-        return eeg_data
+        alpha_powers.append(alpha_power)
+        
+    return np.mean(alpha_powers)
 
-
-# Variabile globale per smussare il dato (Moving Average)
-current_focus_score = 0.5 
-
-def stream_data():
-    """Background thread to process and emit metrics."""
-    global board, streaming, current_focus_score
+def stream_data_loop():
+    global board, streaming, current_state
+    global mu_baseline, sigma_baseline, calibration_buffer
+    global current_z_score
+    
+    print("Neurofeedback Loop Started")
+    update_interval = 0.5 
     
     while streaming:
+        start_loop = time.time()
+        
         if board and board.is_streaming:
-            # PRENDIAMO PIÙ DATI: 250 campioni (circa 1 secondo) per una FFT più precisa
-            # Usiamo get_current_board_data invece di get_board_data per non svuotare il buffer 
-            # se volessimo fare finestre sovrapposte, ma per semplicità qui usiamo get_board_data
-            # Nota: Assicurati che il metodo nella classe KnightBoardServer supporti num_samples più alto
-            data = board.get_latest_data(num_samples=256) 
+            eeg_window = board.get_window_data(duration_sec=2)
             
-            if data is not None and data.shape[1] >= 64: # Assicuriamoci di avere abbastanza dati
+            if eeg_window is not None:
+                fs = board.sampling_rate
                 
-                # Calcola il rapporto Beta/Theta
-                raw_ratio = calculate_concentration_index(board.board_shim, data, board.sampling_rate)
-                
-                # --- LOGICA DI GIOCO (GAMIFICATION) ---
-                # Il rapporto raw solitamente varia tra 0.5 e 2.0 (ma dipende dalla persona).
-                # Normalizziamolo per il frontend (es. target ratio è 1.5)
-                # Usiamo una media mobile esponenziale per rendere la pianta fluida (niente scatti)
-                alpha = 0.1 # Fattore di smoothing (0.1 = lento/fluido, 0.9 = reattivo/scattoso)
-                
-                # Euristicamente: se ratio > 1.1 l'utente è concentrato
-                target_score = 1.0 if raw_ratio > 1.1 else 0.0
-                
-                # Oppure mappatura diretta:
-                # target_score = min(max((raw_ratio - 0.5) / 1.5, 0), 1) 
-                
-                # Aggiorna score fluido
-                current_focus_score = (alpha * raw_ratio) + ((1 - alpha) * current_focus_score)
-                
-                payload = {
-                    'timestamp': time.time(),
-                    'focus_score': current_focus_score, # Valore per far crescere la pianta
-                    'raw_ratio': raw_ratio,             # Utile per debug
-                    'is_focused': raw_ratio > 1.2       # Booleano semplice
-                }
-                
-                print(f"Ratio: {raw_ratio:.2f} | Score: {current_focus_score:.2f}")
-                socketio.emit('eeg_metric', payload)
-                
-        time.sleep(0.2)  # Aggiorniamo ogni 200ms (5 FPS è sufficiente per una pianta)
+                # --- PREPROCESSING (Brainflow Filter) ---
+                for i in range(eeg_window.shape[0]):
+                    # Filtro 2-30Hz circa (Center 16, Width 28 -> 2Hz - 30Hz)
+                    DataFilter.perform_bandpass(eeg_window[i], fs, 16.0, 28.0, 4, FilterTypes.BUTTERWORTH.value, 0)
 
-def calculate_concentration_index(board_shim, data, sampling_rate):
-    """
-    Calcola un indice di concentrazione basato sul rapporto Beta/Theta.
-    Ritorna un valore float (più alto = più concentrato).
-    """
-    eeg_channels = board_shim.get_eeg_channels(board_shim.board_id)
-    
-    # 1. Prepara i dati (necessario per BrainFlow)
-    # Usiamo solo i canali EEG validi
-    eeg_data = data[eeg_channels, :]
-    
-    # 2. Filtraggio (Opzionale ma consigliato per rimuovere artefatti)
-    # Applichiamo un filtro passa-banda 2Hz-45Hz per pulire il segnale
-    for channel in range(len(eeg_channels)):
-        DataFilter.perform_bandpass(eeg_data[channel], sampling_rate, 2.0, 45.0, 4,
-                                    FilterTypes.BUTTERWORTH.value, 0)
-    
-    # 3. Calcolo Bande di Frequenza (Theta e Beta)
-    # Theta: 4-8 Hz (Sognare ad occhi aperti / Distrazione)
-    # Beta: 13-30 Hz (Concentrazione attiva)
-    nfft = DataFilter.get_nearest_power_of_two(sampling_rate)
-    
-    # BrainFlow calcola la potenza media delle bande per tutti i canali
-    # avg_band_powers è una tupla: (medie, deviazioni_standard)
-    try:
-        theta_power = DataFilter.get_avg_band_powers(eeg_data, range(len(eeg_channels)), sampling_rate, apply_filters=True)[0][1] # Index 1 is Theta
-        beta_power = DataFilter.get_avg_band_powers(eeg_data, range(len(eeg_channels)), sampling_rate, apply_filters=True)[0][3]  # Index 3 is Beta
-    except Exception as e:
-        # Se i dati non sono sufficienti per la FFT
-        return 0.0
+                # --- CALCOLO ALPHA ---
+                current_alpha = compute_alpha_power(eeg_window, fs)
+                
+                # --- LOGICA STATI ---
+                
+                if current_state == NeuroState.CALIBRATING:
+                    calibration_buffer.append(current_alpha)
+                    elapsed = time.time() - calibration_start_time
+                    progress = min(elapsed / CALIBRATION_DURATION, 1.0)
+                    
+                    socketio.emit('calibration_progress', {'progress': progress})
+                    
+                    if int(elapsed * 10) % 10 == 0:
+                        print(f"Calibrating... {int(elapsed)}s (Current Alpha: {current_alpha:.2f} uV^2)")
+                    
+                    if elapsed >= CALIBRATION_DURATION:
+                        if len(calibration_buffer) > 0:
+                            data_clean = np.array(calibration_buffer)
+                            mu_baseline = np.mean(data_clean)
+                            sigma_baseline = np.std(data_clean)
+                            
+                            print(f"BASELINE ACQUIRED: μ={mu_baseline:.2f}, σ={sigma_baseline:.2f}")
+                            current_state = NeuroState.RUNNING
+                            socketio.emit('calibration_done', {'mu': mu_baseline, 'sigma': sigma_baseline})
+                        else:
+                            current_state = NeuroState.IDLE
 
-    # 4. Calcolo Rapporto
-    # Aggiungiamo un piccolo epsilon per evitare divisioni per zero
-    ratio = beta_power / (theta_power + 1e-6)
-    
-    return ratio
+                elif current_state == NeuroState.RUNNING:
+                    # Z-Score
+                    z_raw = (current_alpha - mu_baseline) / (sigma_baseline + 1e-6)
+                    z_clamped = max(-2.0, min(z_raw, 3.0))
+                    
+                    alpha_smooth = 0.2
+                    current_z_score = (alpha_smooth * z_clamped) + ((1 - alpha_smooth) * current_z_score)
+                    
+                    # UI Mapping
+                    ui_score = (current_z_score / 4.0) + 0.5 
+                    ui_score = max(0.0, min(ui_score, 1.0))
 
-@app.route('/api/status')
-def status():
-    """Get board status."""
-    if board:
-        return jsonify({
-            'connected': True,
-            'streaming': board.is_streaming,
-            'sampling_rate': board.sampling_rate,
-            'num_channels': len(board.eeg_channels)
-        })
-    return jsonify({'connected': False}), 404
+                    payload = {
+                        'timestamp': time.time(),
+                        'focus_score': ui_score,
+                        'z_score': current_z_score,
+                        'raw_alpha': current_alpha,
+                        'state': 'RUNNING'
+                    }
+                    
+                    print(f"Alpha: {current_alpha:.2f} uV | Z: {current_z_score:.2f} | UI: {ui_score:.2f}")
+                    socketio.emit('eeg_metric', payload)
+        
+        elapsed_loop = time.time() - start_loop
+        time.sleep(max(0, update_interval - elapsed_loop))
 
+# --- API ---
+
+@app.route('/api/calibrate', methods=['POST'])
+def start_calibration():
+    global current_state, calibration_start_time, calibration_buffer
+    current_state = NeuroState.CALIBRATING
+    calibration_buffer = []
+    calibration_start_time = time.time()
+    print("--- STARTING PROTOCOL STEP 2: BASELINE ACQUISITION ---")
+    return jsonify({'message': 'Calibration started'})
 
 @app.route('/api/start', methods=['POST'])
-def start_streaming():
-    """Start streaming EEG data."""
-    global board, streaming, stream_thread
+def start_stream():
+    global board, streaming, stream_thread, current_state
+    if not board: return jsonify({'error': 'Board error'}), 400
     
-    if not board:
-        return jsonify({'error': 'Board not initialized'}), 400
-        
-    try:
-        board.start_stream()
-        streaming = True
-        
-        # Start background thread for data streaming
-        stream_thread = threading.Thread(target=stream_data, daemon=True)
+    board.start_stream()
+    streaming = True
+    current_state = NeuroState.IDLE 
+    
+    if stream_thread is None or not stream_thread.is_alive():
+        stream_thread = threading.Thread(target=stream_data_loop, daemon=True)
         stream_thread.start()
         
-        return jsonify({'message': 'Streaming started', 'sampling_rate': board.sampling_rate})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+    return jsonify({'message': 'Streaming started'})
 
 @app.route('/api/stop', methods=['POST'])
-def stop_streaming():
-    """Stop streaming EEG data."""
+def stop_stream():
     global board, streaming
-    
-    if board:
-        streaming = False
-        board.stop_stream()
-        return jsonify({'message': 'Streaming stopped'})
-    return jsonify({'error': 'Board not initialized'}), 400
+    streaming = False
+    if board: board.stop_stream()
+    return jsonify({'message': 'Stopped'})
 
-
-@socketio.on('connect')
-def handle_connect():
-    """Handle client connection."""
-    print('Client connected')
-    emit('connection_response', {'status': 'connected'})
-
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    """Handle client disconnection."""
-    print('Client disconnected')
-
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    global current_state, mu_baseline
+    state_str = "IDLE"
+    if current_state == NeuroState.CALIBRATING: state_str = "CALIBRATING"
+    elif current_state == NeuroState.RUNNING: state_str = "RUNNING"
+    return jsonify({'connected': board is not None, 'state': state_str, 'baseline_alpha': mu_baseline})
 
 if __name__ == '__main__':
-    import sys
-    
-    # Configuration
-    serial_port = "/dev/cu.usbserial-A5069RR4"
-    num_channels = 8
-    
-    # Allow serial port override from command line
-    if len(sys.argv) > 1:
-        serial_port = sys.argv[1]
-    
-    print(f"Knight Board Server")
-    print(f"Connecting to: {serial_port}")
-    print(f"Channels: {num_channels}")
-    print()
+    serial_port = "COM3"
+    if sys.platform == "darwin": serial_port = "/dev/cu.usbserial-A5069RR4"
+    if len(sys.argv) > 1: serial_port = sys.argv[1]
     
     try:
-        # Initialize board
-        board = KnightBoardServer(serial_port, num_channels)
-        print(f"Board initialized successfully!")
-        print(f"Sampling rate: {board.sampling_rate} Hz")
-        print()
-        print("Server starting...")
-        print("API endpoints:")
-        print("  GET  /api/status - Get board status")
-        print("  POST /api/start  - Start streaming")
-        print("  POST /api/stop   - Stop streaming")
-        print()
-        print("WebSocket: Connect to receive real-time data on 'eeg_data' event")
-        print()
-        print("Server running on http://localhost:5000")
-        
-        # Start Flask server with Socket.IO
+        board = KnightBoardServer(serial_port, 8)
+        print(f"Server Ready on {serial_port}. Protocol: Alpha Z-Score (uV Scaled).")
         socketio.run(app, host='0.0.0.0', port=5000, debug=False)
-        
-    except KeyboardInterrupt:
-        print("\n\nShutting down...")
     except Exception as e:
-        print(f"\nError: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        if board:
-            streaming = False
-            try:
-                board.stop_stream()
-            except:
-                pass
+        print(f"Error: {e}")
