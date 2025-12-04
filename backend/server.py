@@ -113,28 +113,18 @@ def compute_alpha_power(eeg_window, fs):
 
 def detect_bad_eeg_channels(data):
    
-    # Variance thresholds tuned for bandpassed, small-amplitude signals
-    var_low_thresh = 1e-12
-    iqr_multiplier = 1.5  # more tolerant
+    var_low_thresh = 1e-6
+    var_outlier_thresh = 0.5
 
     vars_ = np.var(data, axis=1, ddof=0)
     q1 = np.percentile(vars_, 25)
     q3 = np.percentile(vars_, 75)
     iqr_val = q3 - q1
-    lower_bound = q1 - iqr_multiplier * iqr_val
-    upper_bound = q3 + iqr_multiplier * iqr_val
+    lower_bound = q1 - var_outlier_thresh * iqr_val
+    upper_bound = q3 + var_outlier_thresh * iqr_val
 
     bad_mask = (vars_ < max(var_low_thresh, lower_bound)) | (vars_ > upper_bound)
     bad_idx = np.where(bad_mask)[0].tolist()
-
-    # Ensure we don't flag all channels; keep median-variance channels if necessary
-    if len(bad_idx) == data.shape[0]:
-        median_var = np.median(vars_)
-        # Keep channels within 3*IQR of median
-        tol = 3.0 * (iqr_val if iqr_val > 0 else median_var + 1e-12)
-        good_mask = np.abs(vars_ - median_var) <= tol
-        bad_idx = np.where(~good_mask)[0].tolist()
-
     return bad_idx
 
 def stream_data_loop():
@@ -143,8 +133,10 @@ def stream_data_loop():
     global current_z_score
     
     print("Neurofeedback Loop Started")
+    print(f"Initial state: {current_state}")
     update_interval = 0.1 
     last_compute_ts = 0.0
+    data_received_count = 0
     
     while streaming:
         start_loop = time.time()
@@ -154,6 +146,10 @@ def stream_data_loop():
             eeg_chunk = board.get_window_data(duration_sec=TIME_STEP_SECONDS)
             
             if eeg_chunk is not None:
+                data_received_count += 1
+                if data_received_count % 10 == 1:  # Log every 10th chunk
+                    print(f"Data chunks received: {data_received_count}, shape: {eeg_chunk.shape}")
+                
                 fs = board.sampling_rate
                 # Initialize buffer
                 if window_buffer is None:
@@ -189,6 +185,7 @@ def stream_data_loop():
                     last_compute_ts = now
                     alpha_per_ch = compute_alpha_power(window_buffer, fs)
                     current_alpha = float(np.mean(alpha_per_ch[good_mask])) if np.any(good_mask) else float(np.mean(alpha_per_ch))
+                    print(f"[STATE: {['IDLE', 'CALIBRATING', 'RUNNING'][current_state]}] Computed alpha: {current_alpha:.2f} uV^2")
                 
                 # --- LOGICA STATI ---
                 
@@ -200,6 +197,18 @@ def stream_data_loop():
                         
                         socketio.emit('calibration_progress', {'progress': progress})
                         
+                        # Emit placeholder data during calibration so frontend knows we're alive
+                        calib_payload = {
+                            'timestamp': time.time(),
+                            'focus_score': 0,
+                            'z_score': 0,
+                            'raw_alpha': current_alpha,
+                            'bad_channels': bad_channels,
+                            'state': 'CALIBRATING'
+                        }
+                        socketio.emit('eeg_metric', calib_payload)
+                        print(f"→ Emitted CALIBRATING data: alpha={current_alpha:.2f}")
+                        
                         if int(elapsed * 10) % 10 == 0:
                             print(f"Calibrating... {int(elapsed)}s (Current Alpha: {current_alpha:.2f} uV^2)")
                         
@@ -209,10 +218,14 @@ def stream_data_loop():
                                 mu_baseline = np.mean(data_clean)
                                 sigma_baseline = np.std(data_clean)
                                 
+                                print(f"\n{'='*60}")
                                 print(f"BASELINE ACQUIRED: μ={mu_baseline:.2f}, σ={sigma_baseline:.2f}")
+                                print(f"Transitioning to RUNNING state")
+                                print(f"{'='*60}\n")
                                 current_state = NeuroState.RUNNING
                                 socketio.emit('calibration_done', {'mu': mu_baseline, 'sigma': sigma_baseline})
                             else:
+                                print("ERROR: No calibration data collected!")
                                 current_state = NeuroState.IDLE
 
                 elif current_state == NeuroState.RUNNING:
@@ -221,8 +234,8 @@ def stream_data_loop():
                         # 1. Calcolo Z-Score grezzo
                         z_raw = (current_alpha - mu_baseline) / (sigma_baseline + 1e-6)
                         
-                        # 2. Clamping morbido (esteso a -2 / +2 per la sigmoide)
-                        z_clamped = max(-2.0, min(z_raw, 2.0))
+                        # 2. Clamping morbido (esteso a -4 / +4 per la sigmoide)
+                        z_clamped = max(-4.0, min(z_raw, 4.0))
                         
                         # 3. Smoothing esponenziale
                         alpha_smooth = 0.2
@@ -245,7 +258,7 @@ def stream_data_loop():
                             'bad_channels': bad_channels,
                             'state': 'RUNNING'
                         }
-                        print(f"Alpha: {current_alpha:.2f} | Z: {current_z_score:.2f} | UI: {percent_score}% | Bad: {bad_channels}")
+                        print(f"→ RUNNING: Alpha={current_alpha:.2f} | Z={current_z_score:.2f} | Score={percent_score}% | Bad={bad_channels}")
                         socketio.emit('eeg_metric', payload)
         
         elapsed_loop = time.time() - start_loop
@@ -264,18 +277,23 @@ def start_calibration():
 
 @app.route('/api/start', methods=['POST'])
 def start_stream():
-    global board, streaming, stream_thread, current_state
+    global board, streaming, stream_thread, current_state, calibration_start_time, calibration_buffer
     if not board: return jsonify({'error': 'Board error'}), 400
     
     board.start_stream()
     streaming = True
-    current_state = NeuroState.IDLE 
+    
+    # Immediately start calibration when stream starts
+    current_state = NeuroState.CALIBRATING
+    calibration_buffer = []
+    calibration_start_time = time.time()
+    print("--- STREAMING AND CALIBRATION STARTED ---")
     
     if stream_thread is None or not stream_thread.is_alive():
         stream_thread = threading.Thread(target=stream_data_loop, daemon=True)
         stream_thread.start()
         
-    return jsonify({'message': 'Streaming started'})
+    return jsonify({'message': 'Streaming and calibration started'})
 
 @app.route('/api/stop', methods=['POST'])
 def stop_stream():
