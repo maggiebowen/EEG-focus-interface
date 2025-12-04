@@ -88,7 +88,13 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
             {/* Alpha Wave Graph */}
             <div className="bg-surface rounded-2xl p-4 border border-white/5 flex-1 min-h-0 flex flex-col">
                 <h3 className="text-gray-400 text-xs font-medium mb-4 shrink-0">Alpha Waves (8-13 Hz)</h3>
-                <div className="flex-1 relative min-h-0">
+                <div className="flex-1 relative min-h-0 flex gap-2">
+                    {/* Y-axis labels */}
+                    <div className="flex flex-col justify-between text-xs text-gray-500 w-12 shrink-0">
+                        <span>100%</span>
+                        <span>50%</span>
+                        <span>0%</span>
+                    </div>
                     <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
                         {/* Grid lines */}
                         <line x1="0" y1="25" x2="300" y2="25" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
@@ -132,13 +138,6 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
                             </>
                         )}
                     </svg>
-
-                    {/* Y-axis labels */}
-                    <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-xs text-gray-500 -ml-8">
-                        <span>100%</span>
-                        <span>50%</span>
-                        <span>0%</span>
-                    </div>
                 </div>
 
                 {/* Current alpha value */}

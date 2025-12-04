@@ -10,9 +10,9 @@ export default {
                 sans: ['Outfit', 'sans-serif'],
             },
             colors: {
-                background: '#0a0a0a',
-                surface: '#111111',
-                primary: '#4ade80',
+                background: '#f8fafc',
+                surface: '#ffffff',
+                primary: '#16a34a',
             }
         },
     },
