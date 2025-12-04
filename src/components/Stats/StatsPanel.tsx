@@ -75,12 +75,12 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
                     <div className="flex flex-col items-center gap-2 bg-white/5 rounded-lg p-3">
                         <Clock size={16} className="text-emerald-400" />
                         <span className="text-xs text-gray-500">Session Time</span>
-                        <span className="text-lg font-bold font-mono text-emerald-400">{sessionStats.duration}</span>
+                        <span className="text-lg font-bold text-emerald-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>{sessionStats.duration}</span>
                     </div>
                     <div className="flex flex-col items-center gap-2 bg-white/5 rounded-lg p-3">
                         <Timer size={16} className="text-green-400" />
                         <span className="text-xs text-gray-500">Focus Time</span>
-                        <span className="text-lg font-bold font-mono text-green-400">{formatTime(focusTimeMs)}</span>
+                        <span className="text-lg font-bold text-green-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>{formatTime(focusTimeMs)}</span>
                     </div>
                 </div>
             </div>
@@ -143,7 +143,7 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
                 {/* Current alpha value */}
                 <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
                     <span className="text-xs text-gray-500">Current Alpha</span>
-                    <span className="text-sm font-mono font-semibold text-emerald-400">
+                    <span className="text-sm font-semibold text-emerald-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>
                         {alphaHistory.length > 0 ? (alphaHistory[alphaHistory.length - 1] * 100).toFixed(1) : '0.0'}%
                     </span>
                 </div>

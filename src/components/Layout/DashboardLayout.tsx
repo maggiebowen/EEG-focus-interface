@@ -11,7 +11,8 @@ export const DashboardLayout: React.FC = () => {
     const [showStats, setShowStats] = useState(true);
 
     return (
-        <div className="h-screen w-screen bg-background text-white p-4 flex flex-col gap-4 overflow-hidden">
+        <div className="h-screen w-screen text-black p-4 flex flex-col gap-4 overflow-hidden"
+            style={{ backgroundColor: '#D1B2DC' }}>
             {/* Header */}
             <header className="flex justify-between items-center px-2 shrink-0 h-12">
                 <div className="flex items-center gap-3">
@@ -22,20 +23,20 @@ export const DashboardLayout: React.FC = () => {
                         </svg>
                     </div>
                     <div>
-                        <h1 className="text-lg font-semibold tracking-tight">FocusFarm</h1>
-                        <p className="text-[10px] text-gray-400">Grow your concentration</p>
+                        <h1 className="text-lg font-semibold tracking-tight text-black">FocusFarm</h1>
+                        <p className="text-[10px] text-gray-700">Grow your concentration</p>
                     </div>
                 </div>
-                <div className="flex gap-4 text-gray-400">
+                <div className="flex gap-4 text-gray-700">
                     <button
-                        className={`hover:text-white transition-colors ${showStats ? 'text-green-400' : ''}`}
+                        className={`hover:text-black transition-colors ${showStats ? 'text-green-600' : ''}`}
                         onClick={() => setShowStats(!showStats)}
                         title={showStats ? 'Hide Stats' : 'Show Stats'}
                     >
                         <BarChart3 size={18} />
                     </button>
-                    <button className="hover:text-white transition-colors"><Info size={18} /></button>
-                    <button className="hover:text-white transition-colors"><Settings size={18} /></button>
+                    <button className="hover:text-black transition-colors"><Info size={18} /></button>
+                    <button className="hover:text-black transition-colors"><Settings size={18} /></button>
                 </div>
             </header>
 
