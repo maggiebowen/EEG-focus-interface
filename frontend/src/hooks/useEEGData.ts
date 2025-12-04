@@ -1,111 +1,228 @@
 import { useState, useEffect, useRef } from 'react';
+import { io, Socket } from 'socket.io-client';
+
+const BACKEND_URL = 'http://localhost:5001';
+const CALIBRATION_DURATION_MS = 15000; // 15 seconds
 
 export const useEEGData = () => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [elapsedMs, setElapsedMs] = useState(0);
     const startTimeRef = useRef<number | null>(null);
+    const socketRef = useRef<Socket | null>(null);
+    const calibrationStartRef = useRef<number | null>(null);
 
-    // Mock Data State
+    // Real EEG Data State
     const [focusScore, setFocusScore] = useState(0);
     const [sessionStats, setSessionStats] = useState({
-        duration: '00:00',
         average: 0,
         peak: 0
     });
-    const [bandPowers, setBandPowers] = useState({
-        delta: 0.1,
-        theta: 0.2,
-        alpha: 0.4,
-        beta: 0.2,
-        gamma: 0.1
-    });
+    const [alphaHistory, setAlphaHistory] = useState<number[]>([]);
+    const [focusTimeMs, setFocusTimeMs] = useState(0);
+    const [isCalibrating, setIsCalibrating] = useState(false);
+    const [calibrationProgress, setCalibrationProgress] = useState(0);
+    const [isConnected, setIsConnected] = useState(false);
+    const [hasReceivedData, setHasReceivedData] = useState(false);
+    
+    const maxHistoryPoints = 60; // Keep last 60 data points
+    const focusScoreHistoryRef = useRef<number[]>([]);
+    const alphaMinRef = useRef<number>(Infinity);
+    const alphaMaxRef = useRef<number>(-Infinity);
 
-    const SESSION_DURATION_MS = 25 * 60 * 1000; // 25 minutes
+    // Initialize WebSocket connection
+    useEffect(() => {
+        socketRef.current = io(BACKEND_URL);
 
-    const toggleSession = () => {
+        socketRef.current.on('connect', () => {
+            console.log('Connected to EEG backend');
+            setIsConnected(true);
+        });
+
+        // Debug: Log ALL socket events
+        socketRef.current.onAny((eventName, ...args) => {
+            console.log(`[Socket Event] ${eventName}:`, args);
+        });
+
+        socketRef.current.on('eeg_metric', (payload) => {
+            const { focus_score, raw_alpha, state, z_score } = payload;
+            
+            console.log(`[eeg_metric] State: ${state} | Focus: ${focus_score} | Alpha: ${raw_alpha?.toFixed(2)} | Z: ${z_score?.toFixed(2)}`);
+            
+            // Skip updates during calibration (backend sends 0s)
+            if (state === 'CALIBRATING') {
+                return;
+            }
+            
+            // Mark that we've received actual data
+            if (state === 'RUNNING') {
+                // Force exit calibration if we receive RUNNING data
+                if (isCalibrating) {
+                    console.log('⚠️ Received RUNNING data while in calibration - forcing exit');
+                    setIsCalibrating(false);
+                    setIsPlaying(true);
+                    startTimeRef.current = Date.now();
+                    calibrationStartRef.current = null;
+                }
+                
+                setHasReceivedData(true);
+                console.log(`✓ RUNNING data received! Focus score: ${focus_score}`);
+            }
+            
+            // Update focus score
+            setFocusScore(focus_score);
+            
+            // Track min/max for normalization
+            if (raw_alpha < alphaMinRef.current) alphaMinRef.current = raw_alpha;
+            if (raw_alpha > alphaMaxRef.current) alphaMaxRef.current = raw_alpha;
+            
+            // Normalize alpha to 0-1 range for display
+            const range = alphaMaxRef.current - alphaMinRef.current;
+            const normalizedAlpha = range > 0 
+                ? (raw_alpha - alphaMinRef.current) / range 
+                : 0.5;
+            
+            // Update alpha history with normalized value
+            setAlphaHistory(prev => {
+                const newHistory = [...prev, normalizedAlpha];
+                if (newHistory.length > maxHistoryPoints) {
+                    return newHistory.slice(-maxHistoryPoints);
+                }
+                return newHistory;
+            });
+
+            // Track focus score history for average calculation
+            focusScoreHistoryRef.current.push(focus_score);
+            if (focusScoreHistoryRef.current.length > 100) {
+                focusScoreHistoryRef.current.shift();
+            }
+
+            // Update session stats
+            setSessionStats(prev => {
+                const average = focusScoreHistoryRef.current.length > 0
+                    ? focusScoreHistoryRef.current.reduce((a, b) => a + b, 0) / focusScoreHistoryRef.current.length
+                    : 0;
+                return {
+                    average,
+                    peak: Math.max(prev.peak, focus_score)
+                };
+            });
+
+            // Track focus time (when score > 50)
+            if (focus_score > 50) {
+                setFocusTimeMs(prev => prev + 100);
+            }
+        });
+
+        socketRef.current.on('calibration_progress', ({ progress }) => {
+            console.log('Calibration progress:', progress);
+            setCalibrationProgress(progress);
+        });
+
+        socketRef.current.on('calibration_done', (data) => {
+            console.log('✓ Backend calibration complete - SYNCED START', data);
+            
+            // Force exit calibration and start session
+            setIsCalibrating(false);
+            setIsPlaying(true);
+            setCalibrationProgress(1.0);
+            startTimeRef.current = Date.now();
+            calibrationStartRef.current = null;
+        });
+
+        socketRef.current.on('disconnect', () => {
+            console.log('Disconnected from EEG backend');
+            setIsConnected(false);
+        });
+
+        return () => {
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+            }
+        };
+    }, []);
+
+    const toggleSession = async () => {
         if (isPlaying) {
-            // STOP: Pause timer, freeze values
+            // STOP: Stop streaming
             setIsPlaying(false);
             startTimeRef.current = null;
+            setIsCalibrating(false);
+            calibrationStartRef.current = null;
+            setHasReceivedData(false);
+            try {
+                await fetch(`${BACKEND_URL}/api/stop`, { method: 'POST' });
+            } catch (error) {
+                console.error('Error stopping stream:', error);
+            }
         } else {
-            // START: Set start time (accounting for already elapsed time)
-            setIsPlaying(true);
-            startTimeRef.current = Date.now() - elapsedMs;
+            // START: Start streaming and calibration
+            try {
+                // Reset state
+                setFocusScore(0);
+                setAlphaHistory([]);
+                setSessionStats({ average: 0, peak: 0 });
+                setFocusTimeMs(0);
+                setHasReceivedData(false);
+                focusScoreHistoryRef.current = [];
+                alphaMinRef.current = Infinity;
+                alphaMaxRef.current = -Infinity;
+                
+                // Start calibration timer
+                setIsCalibrating(true);
+                setCalibrationProgress(0);
+                calibrationStartRef.current = Date.now();
+                
+                // Start streaming (calibration now starts automatically on backend)
+                console.log('Starting stream and calibration...');
+                await fetch(`${BACKEND_URL}/api/start`, { method: 'POST' });
+                
+            } catch (error) {
+                console.error('Error starting stream:', error);
+                setIsCalibrating(false);
+                calibrationStartRef.current = null;
+            }
         }
     };
 
-    // Timer Logic (High frequency for smooth animation)
+    // Calibration timer - enforce minimum 15 seconds
+    // Calibration timer - track progress visually but wait for backend signal
     useEffect(() => {
-        if (!isPlaying) return;
-
-        let animationFrameId: number;
-
-        const tick = () => {
-            if (startTimeRef.current !== null) {
-                setElapsedMs(Date.now() - startTimeRef.current);
-                animationFrameId = requestAnimationFrame(tick);
-            }
-        };
-
-        animationFrameId = requestAnimationFrame(tick);
-
-        return () => {
-            cancelAnimationFrame(animationFrameId);
-        };
-    }, [isPlaying]);
-
-    // Mock Data Update Logic (Once per second)
-    useEffect(() => {
-        if (!isPlaying) return;
+        if (!isCalibrating || !calibrationStartRef.current) return;
 
         const interval = setInterval(() => {
-            // Update Focus Score
-            setFocusScore(prev => {
-                const change = (Math.random() - 0.4) * 5;
-                return Math.min(100, Math.max(0, prev + change));
-            });
-
-            // Update Band Powers
-            setBandPowers({
-                delta: 0.1 + Math.random() * 0.05,
-                theta: 0.15 + Math.random() * 0.1,
-                alpha: 0.3 + Math.random() * 0.2,
-                beta: 0.15 + Math.random() * 0.1,
-                gamma: 0.05 + Math.random() * 0.05,
-            });
-
-            // Update Stats (Average/Peak)
-            setSessionStats(prev => ({
-                ...prev,
-                average: (prev.average * 10 + focusScore) / 11,
-                peak: Math.max(prev.peak, focusScore)
-            }));
-
-        }, 1000);
+            const elapsed = Date.now() - calibrationStartRef.current!;
+            
+            // Cap progress at 99% - only backend calibration_done can complete it
+            const progress = Math.min(elapsed / CALIBRATION_DURATION_MS, 0.99);
+            setCalibrationProgress(progress);
+        }, 100);
 
         return () => clearInterval(interval);
-    }, [isPlaying, focusScore]);
+    }, [isCalibrating]);
 
-    // Derived Values
-    const progress = Math.min(1, elapsedMs / SESSION_DURATION_MS);
-
-    // Format Duration for Display
-    const totalSeconds = Math.floor(elapsedMs / 1000);
-    const m = Math.floor(totalSeconds / 60);
-    const s = totalSeconds % 60;
-    const formattedDuration = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-
-    // Update session stats duration
+    // Session timer - update elapsed time when playing
     useEffect(() => {
-        setSessionStats(prev => ({ ...prev, duration: formattedDuration }));
-    }, [formattedDuration]);
+        if (!isPlaying || !startTimeRef.current) return;
+
+        const interval = setInterval(() => {
+            const elapsed = Date.now() - startTimeRef.current!;
+            setElapsedMs(elapsed);
+        }, 100);
+
+        return () => clearInterval(interval);
+    }, [isPlaying]);
 
     return {
         isPlaying,
         toggleSession,
         focusScore,
         sessionStats,
-        bandPowers,
-        progress
+        alphaHistory,
+        focusTimeMs,
+        elapsedMs,
+        isCalibrating,
+        calibrationProgress,
+        isConnected,
+        hasReceivedData
     };
 };

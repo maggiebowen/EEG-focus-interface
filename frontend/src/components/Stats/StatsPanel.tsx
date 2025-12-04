@@ -14,6 +14,13 @@ interface StatsPanelProps {
 }
 
 export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats, alphaHistory, focusTimeMs }) => {
+    const [updateCount, setUpdateCount] = React.useState(0);
+    
+    // Track updates
+    React.useEffect(() => {
+        setUpdateCount(prev => prev + 1);
+    }, [focusScore]);
+    
     const getScoreColor = (score: number) => {
         if (score < 25) return 'text-red-500';
         if (score < 50) return 'text-orange-500';
@@ -76,11 +83,13 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
                         <Clock size={16} className="text-emerald-400" />
                         <span className="text-xs text-gray-500">Session Time</span>
                         <span className="text-lg font-bold text-emerald-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>{sessionStats.duration}</span>
+                        <span className="text-lg font-bold font-mono text-emerald-400">{sessionStats.duration}</span>
                     </div>
                     <div className="flex flex-col items-center gap-2 bg-white/5 rounded-lg p-3">
                         <Timer size={16} className="text-green-400" />
                         <span className="text-xs text-gray-500">Focus Time</span>
                         <span className="text-lg font-bold text-green-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>{formatTime(focusTimeMs)}</span>
+                        <span className="text-lg font-bold font-mono text-green-400">{formatTime(focusTimeMs)}</span>
                     </div>
                 </div>
             </div>
@@ -144,8 +153,36 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
                 <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
                     <span className="text-xs text-gray-500">Current Alpha</span>
                     <span className="text-sm font-semibold text-emerald-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>
+                    <span className="text-sm font-mono font-semibold text-emerald-400">
                         {alphaHistory.length > 0 ? (alphaHistory[alphaHistory.length - 1] * 100).toFixed(1) : '0.0'}%
                     </span>
+                </div>
+            </div>
+
+            {/* Debug Info Panel */}
+            <div className="bg-surface rounded-2xl p-4 border border-white/5 shrink-0">
+                <h3 className="text-gray-400 text-xs font-medium mb-3">Data Flow (Debug)</h3>
+                <div className="space-y-2 text-xs font-mono">
+                    <div className="flex justify-between">
+                        <span className="text-gray-500">Focus Score:</span>
+                        <span className={focusScore > 0 ? "text-green-400" : "text-gray-400"}>{focusScore}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-gray-500">Updates:</span>
+                        <span className="text-blue-400">{updateCount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-gray-500">Alpha History:</span>
+                        <span className="text-purple-400">{alphaHistory.length} points</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-gray-500">Avg Score:</span>
+                        <span className="text-yellow-400">{sessionStats.average.toFixed(1)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-gray-500">Peak:</span>
+                        <span className="text-orange-400">{sessionStats.peak}</span>
+                    </div>
                 </div>
             </div>
         </>
