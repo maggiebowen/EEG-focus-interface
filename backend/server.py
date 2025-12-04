@@ -113,18 +113,28 @@ def compute_alpha_power(eeg_window, fs):
 
 def detect_bad_eeg_channels(data):
    
-    var_low_thresh = 1e-6
-    var_outlier_thresh = 0.5
+    # Variance thresholds tuned for bandpassed, small-amplitude signals
+    var_low_thresh = 1e-12
+    iqr_multiplier = 1.5  # more tolerant
 
     vars_ = np.var(data, axis=1, ddof=0)
     q1 = np.percentile(vars_, 25)
     q3 = np.percentile(vars_, 75)
     iqr_val = q3 - q1
-    lower_bound = q1 - var_outlier_thresh * iqr_val
-    upper_bound = q3 + var_outlier_thresh * iqr_val
+    lower_bound = q1 - iqr_multiplier * iqr_val
+    upper_bound = q3 + iqr_multiplier * iqr_val
 
     bad_mask = (vars_ < max(var_low_thresh, lower_bound)) | (vars_ > upper_bound)
     bad_idx = np.where(bad_mask)[0].tolist()
+
+    # Ensure we don't flag all channels; keep median-variance channels if necessary
+    if len(bad_idx) == data.shape[0]:
+        median_var = np.median(vars_)
+        # Keep channels within 3*IQR of median
+        tol = 3.0 * (iqr_val if iqr_val > 0 else median_var + 1e-12)
+        good_mask = np.abs(vars_ - median_var) <= tol
+        bad_idx = np.where(~good_mask)[0].tolist()
+
     return bad_idx
 
 def stream_data_loop():
