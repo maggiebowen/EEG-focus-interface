@@ -318,6 +318,6 @@ if __name__ == '__main__':
     try:
         board = KnightBoardServer(serial_port, 8)
         print(f"Server Ready on {serial_port}. Protocol: Alpha Z-Score (uV Scaled).")
-        socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+        socketio.run(app, host='0.0.0.0', port=5001, debug=False)
     except Exception as e:
         print(f"Error: {e}")

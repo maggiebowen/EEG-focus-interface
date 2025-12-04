@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 
-const BACKEND_URL = 'http://localhost:5000';
+const BACKEND_URL = 'http://localhost:5001';
 const CALIBRATION_DURATION_MS = 15000; // 15 seconds
 
 export const useEEGData = () => {
