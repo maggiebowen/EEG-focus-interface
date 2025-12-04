@@ -12,6 +12,7 @@ import csv
 import os
 from datetime import datetime
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
+from brainflow.data_filter import DataFilter, FilterTypes, AggOperations, WindowOperations, DetrendOperations
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
@@ -93,6 +94,7 @@ class KnightBoardServer:
         return eeg_data
 
 
+<<<<<<< HEAD
 def init_csv_logging(num_channels: int):
     """Initialize CSV logging file and writer."""
     global csv_file, csv_writer, csv_filepath, sample_index_counter
@@ -191,7 +193,91 @@ def stream_data():
                 socketio.emit('eeg_data', payload)
 
         time.sleep(1.0)  # Send updates every 100ms
+=======
+# Variabile globale per smussare il dato (Moving Average)
+current_focus_score = 0.5 
 
+def stream_data():
+    """Background thread to process and emit metrics."""
+    global board, streaming, current_focus_score
+    
+    while streaming:
+        if board and board.is_streaming:
+            # PRENDIAMO PIÙ DATI: 250 campioni (circa 1 secondo) per una FFT più precisa
+            # Usiamo get_current_board_data invece di get_board_data per non svuotare il buffer 
+            # se volessimo fare finestre sovrapposte, ma per semplicità qui usiamo get_board_data
+            # Nota: Assicurati che il metodo nella classe KnightBoardServer supporti num_samples più alto
+            data = board.get_latest_data(num_samples=256) 
+            
+            if data is not None and data.shape[1] >= 64: # Assicuriamoci di avere abbastanza dati
+                
+                # Calcola il rapporto Beta/Theta
+                raw_ratio = calculate_concentration_index(board.board_shim, data, board.sampling_rate)
+                
+                # --- LOGICA DI GIOCO (GAMIFICATION) ---
+                # Il rapporto raw solitamente varia tra 0.5 e 2.0 (ma dipende dalla persona).
+                # Normalizziamolo per il frontend (es. target ratio è 1.5)
+                # Usiamo una media mobile esponenziale per rendere la pianta fluida (niente scatti)
+                alpha = 0.1 # Fattore di smoothing (0.1 = lento/fluido, 0.9 = reattivo/scattoso)
+                
+                # Euristicamente: se ratio > 1.1 l'utente è concentrato
+                target_score = 1.0 if raw_ratio > 1.1 else 0.0
+                
+                # Oppure mappatura diretta:
+                # target_score = min(max((raw_ratio - 0.5) / 1.5, 0), 1) 
+                
+                # Aggiorna score fluido
+                current_focus_score = (alpha * raw_ratio) + ((1 - alpha) * current_focus_score)
+                
+                payload = {
+                    'timestamp': time.time(),
+                    'focus_score': current_focus_score, # Valore per far crescere la pianta
+                    'raw_ratio': raw_ratio,             # Utile per debug
+                    'is_focused': raw_ratio > 1.2       # Booleano semplice
+                }
+                
+                print(f"Ratio: {raw_ratio:.2f} | Score: {current_focus_score:.2f}")
+                socketio.emit('eeg_metric', payload)
+                
+        time.sleep(0.2)  # Aggiorniamo ogni 200ms (5 FPS è sufficiente per una pianta)
+>>>>>>> 7e1bb4f (Enhance EEG data streaming: improve focus score calculation and data handling)
+
+def calculate_concentration_index(board_shim, data, sampling_rate):
+    """
+    Calcola un indice di concentrazione basato sul rapporto Beta/Theta.
+    Ritorna un valore float (più alto = più concentrato).
+    """
+    eeg_channels = board_shim.get_eeg_channels(board_shim.board_id)
+    
+    # 1. Prepara i dati (necessario per BrainFlow)
+    # Usiamo solo i canali EEG validi
+    eeg_data = data[eeg_channels, :]
+    
+    # 2. Filtraggio (Opzionale ma consigliato per rimuovere artefatti)
+    # Applichiamo un filtro passa-banda 2Hz-45Hz per pulire il segnale
+    for channel in range(len(eeg_channels)):
+        DataFilter.perform_bandpass(eeg_data[channel], sampling_rate, 2.0, 45.0, 4,
+                                    FilterTypes.BUTTERWORTH.value, 0)
+    
+    # 3. Calcolo Bande di Frequenza (Theta e Beta)
+    # Theta: 4-8 Hz (Sognare ad occhi aperti / Distrazione)
+    # Beta: 13-30 Hz (Concentrazione attiva)
+    nfft = DataFilter.get_nearest_power_of_two(sampling_rate)
+    
+    # BrainFlow calcola la potenza media delle bande per tutti i canali
+    # avg_band_powers è una tupla: (medie, deviazioni_standard)
+    try:
+        theta_power = DataFilter.get_avg_band_powers(eeg_data, range(len(eeg_channels)), sampling_rate, apply_filters=True)[0][1] # Index 1 is Theta
+        beta_power = DataFilter.get_avg_band_powers(eeg_data, range(len(eeg_channels)), sampling_rate, apply_filters=True)[0][3]  # Index 3 is Beta
+    except Exception as e:
+        # Se i dati non sono sufficienti per la FFT
+        return 0.0
+
+    # 4. Calcolo Rapporto
+    # Aggiungiamo un piccolo epsilon per evitare divisioni per zero
+    ratio = beta_power / (theta_power + 1e-6)
+    
+    return ratio
 
 @app.route('/api/status')
 def status():
