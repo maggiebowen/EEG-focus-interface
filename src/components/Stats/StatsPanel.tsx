@@ -1,29 +1,31 @@
 import React from 'react';
-import { Activity, Clock, Zap } from 'lucide-react';
+import { Clock, Timer } from 'lucide-react';
 import clsx from 'clsx';
 
 interface StatsPanelProps {
     focusScore: number;
-    bandPowers: {
-        delta: number;
-        theta: number;
-        alpha: number;
-        beta: number;
-        gamma: number;
-    };
     sessionStats: {
         duration: string;
         average: number;
         peak: number;
     };
+    alphaHistory: number[];
+    focusTimeMs: number;
 }
 
-export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, bandPowers, sessionStats }) => {
+export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats, alphaHistory, focusTimeMs }) => {
     const getScoreColor = (score: number) => {
         if (score < 25) return 'text-red-500';
         if (score < 50) return 'text-orange-500';
         if (score < 75) return 'text-yellow-500';
         return 'text-primary';
+    };
+
+    const formatTime = (ms: number) => {
+        const totalSeconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     };
 
     return (
@@ -66,25 +68,85 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, bandPowers, 
                 </div>
             </div>
 
-            {/* Session Stats */}
+            {/* Timers */}
             <div className="bg-surface rounded-2xl p-4 border border-white/5 shrink-0">
-                <h3 className="text-gray-400 text-xs font-medium mb-4">Session Stats</h3>
-                <div className="grid grid-cols-3 gap-2">
-                    <StatItem icon={<Clock size={14} />} label="Duration" value={sessionStats.duration} color="text-emerald-400" />
-                    <StatItem icon={<Activity size={14} />} label="Average" value={sessionStats.average.toFixed(1)} color="text-yellow-400" />
-                    <StatItem icon={<Zap size={14} />} label="Peak" value={sessionStats.peak.toFixed(1)} color="text-purple-400" />
+                <h3 className="text-gray-400 text-xs font-medium mb-4">Time Tracking</h3>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col items-center gap-2 bg-white/5 rounded-lg p-3">
+                        <Clock size={16} className="text-emerald-400" />
+                        <span className="text-xs text-gray-500">Session Time</span>
+                        <span className="text-lg font-bold font-mono text-emerald-400">{sessionStats.duration}</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-2 bg-white/5 rounded-lg p-3">
+                        <Timer size={16} className="text-green-400" />
+                        <span className="text-xs text-gray-500">Focus Time</span>
+                        <span className="text-lg font-bold font-mono text-green-400">{formatTime(focusTimeMs)}</span>
+                    </div>
                 </div>
             </div>
 
-            {/* Band Powers */}
+            {/* Alpha Wave Graph */}
             <div className="bg-surface rounded-2xl p-4 border border-white/5 flex-1 min-h-0 flex flex-col">
-                <h3 className="text-gray-400 text-xs font-medium mb-4 shrink-0">Band Powers</h3>
-                <div className="flex-1 flex flex-col justify-between gap-2 overflow-y-auto">
-                    <BandItem label="Delta" range="0.5-4 Hz" value={bandPowers.delta} color="bg-purple-500" />
-                    <BandItem label="Theta" range="4-8 Hz" value={bandPowers.theta} color="bg-blue-500" />
-                    <BandItem label="Alpha" range="8-13 Hz" value={bandPowers.alpha} color="bg-emerald-500" />
-                    <BandItem label="Beta" range="13-32 Hz" value={bandPowers.beta} color="bg-yellow-500" />
-                    <BandItem label="Gamma" range="32+ Hz" value={bandPowers.gamma} color="bg-red-500" />
+                <h3 className="text-gray-400 text-xs font-medium mb-4 shrink-0">Alpha Waves (8-13 Hz)</h3>
+                <div className="flex-1 relative min-h-0">
+                    <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
+                        {/* Grid lines */}
+                        <line x1="0" y1="25" x2="300" y2="25" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
+                        <line x1="0" y1="50" x2="300" y2="50" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
+                        <line x1="0" y1="75" x2="300" y2="75" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
+
+                        {/* Alpha wave line */}
+                        {alphaHistory.length > 1 && (
+                            <polyline
+                                points={alphaHistory.map((value, index) => {
+                                    const x = (index / (alphaHistory.length - 1)) * 300;
+                                    const y = 100 - (value * 100);
+                                    return `${x},${y}`;
+                                }).join(' ')}
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                className="text-emerald-400"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        )}
+
+                        {/* Gradient fill under line */}
+                        {alphaHistory.length > 1 && (
+                            <>
+                                <defs>
+                                    <linearGradient id="alphaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                        <stop offset="0%" stopColor="rgb(52, 211, 153)" stopOpacity="0.3" />
+                                        <stop offset="100%" stopColor="rgb(52, 211, 153)" stopOpacity="0" />
+                                    </linearGradient>
+                                </defs>
+                                <polygon
+                                    points={`0,100 ${alphaHistory.map((value, index) => {
+                                        const x = (index / (alphaHistory.length - 1)) * 300;
+                                        const y = 100 - (value * 100);
+                                        return `${x},${y}`;
+                                    }).join(' ')} 300,100`}
+                                    fill="url(#alphaGradient)"
+                                />
+                            </>
+                        )}
+                    </svg>
+
+                    {/* Y-axis labels */}
+                    <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-xs text-gray-500 -ml-8">
+                        <span>100%</span>
+                        <span>50%</span>
+                        <span>0%</span>
+                    </div>
+                </div>
+
+                {/* Current alpha value */}
+                <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Current Alpha</span>
+                    <span className="text-sm font-mono font-semibold text-emerald-400">
+                        {alphaHistory.length > 0 ? (alphaHistory[alphaHistory.length - 1] * 100).toFixed(1) : '0.0'}%
+                    </span>
                 </div>
             </div>
         </>
@@ -96,24 +158,5 @@ const StatItem = ({ icon, label, value, color }: { icon: React.ReactNode, label:
         <div className={clsx("p-2 rounded-full bg-white/5", color)}>{icon}</div>
         <span className="text-lg font-semibold">{value}</span>
         <span className="text-xs text-gray-500">{label}</span>
-    </div>
-);
-
-const BandItem = ({ label, range, value, color }: { label: string, range: string, value: number, color: string }) => (
-    <div className="space-y-2">
-        <div className="flex justify-between text-sm">
-            <div className="flex items-center gap-2">
-                <div className={clsx("w-2 h-2 rounded-full", color)} />
-                <span className="font-medium text-gray-300">{label}</span>
-                <span className="text-gray-500 text-xs">{range}</span>
-            </div>
-            <span className="font-mono text-gray-400">{(value * 100).toFixed(1)}%</span>
-        </div>
-        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-            <div
-                className={clsx("h-full rounded-full transition-all duration-300", color)}
-                style={{ width: `${value * 100}%` }}
-            />
-        </div>
     </div>
 );

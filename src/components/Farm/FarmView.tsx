@@ -14,13 +14,6 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
     // Helper for staggered growth
     const getStage = (elapsedSeconds: number, index: number, growthTime: number, stagger: number, maxStage: number) => {
         const localTime = Math.max(0, elapsedSeconds - index * stagger);
-        // Calculate stage: (localTime / growthTime) gives 0 to 1 progress. 
-        // Multiply by (maxStage + 1) to map to 0..maxStage indices.
-        // However, the prompt logic "Math.floor((localTime / growthTime) * (maxStage + 1))" implies it reaches maxStage+1 at end of growthTime?
-        // Let's stick exactly to the prompt's logic but clamp it.
-        // Actually, usually growth is: stage = floor(progress * steps).
-        // If growthTime is "time to reach full maturity", then at growthTime it should be maxStage.
-        // Let's use the prompt's formula exactly:
         const raw = Math.floor((localTime / growthTime) * (maxStage + 1));
         return Math.min(maxStage, raw);
     };
