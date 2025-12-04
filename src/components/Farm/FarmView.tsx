@@ -1,6 +1,5 @@
 
 import React from 'react';
-import clsx from 'clsx';
 
 interface FarmViewProps {
     isPlaying: boolean;
@@ -11,26 +10,7 @@ interface FarmViewProps {
 export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elapsedMs }) => {
     const elapsedSeconds = Math.floor(elapsedMs / 1000);
 
-    // Helper for staggered growth
-    const getStage = (elapsedSeconds: number, index: number, growthTime: number, stagger: number, maxStage: number) => {
-        const localTime = Math.max(0, elapsedSeconds - index * stagger);
-        // Calculate stage: (localTime / growthTime) gives 0 to 1 progress. 
-        // Multiply by (maxStage + 1) to map to 0..maxStage indices.
-        // However, the prompt logic "Math.floor((localTime / growthTime) * (maxStage + 1))" implies it reaches maxStage+1 at end of growthTime?
-        // Let's stick exactly to the prompt's logic but clamp it.
-        // Actually, usually growth is: stage = floor(progress * steps).
-        // If growthTime is "time to reach full maturity", then at growthTime it should be maxStage.
-        // Let's use the prompt's formula exactly:
-        const raw = Math.floor((localTime / growthTime) * (maxStage + 1));
-        return Math.min(maxStage, raw);
-    };
 
-    // Constants
-    const FARM_SIZE = 600;
-    const FENCE_V_WIDTH = 70;
-    const FENCE_V_HEIGHT = 500;
-    const FENCE_H_WIDTH = 500;
-    const FENCE_H_HEIGHT = 70;
 
     // Corn Config
     const cornImages = [
@@ -40,13 +20,7 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
         "/assets/corn4.png",
         "/assets/corn5.png"
     ];
-    const CORN_COUNT = 4;
-    const CORN_GROWTH_SEC = 20;
-    const CORN_STAGGER_SEC = 3;
-    const CORN_MAX_STAGE = 4;
-    const cornY = 110;
-    const cornXStart = 110;
-    const cornSpacing = 100;
+
 
     // Cherry Config
     const cherryImages = [
@@ -56,130 +30,312 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
         "/assets/cherry4.png",
         "/assets/cherry5.png"
     ];
-    const CHERRY_COUNT = 4;
-    const CHERRY_GROWTH_SEC = 20;
-    const CHERRY_STAGGER_SEC = 3;
-    const CHERRY_MAX_STAGE = 4;
-    const cherryY_Prompt = cornY + 90;
-    const cherryXStart = cornXStart;
-    const cherrySpacing = cornSpacing;
+
+    const CORN_GROWTH_SEC = 20;
+    const CORN_STAGGER_SEC = 3;
+
+    // Animation Config
+    const LAST_PLANT_START = 19 * CORN_STAGGER_SEC;
+    const ALL_GROWN_TIME = LAST_PLANT_START + CORN_GROWTH_SEC;
+    const SLIDE_DURATION = 2.5;
 
     return (
-        <div className="w-full h-full relative group overflow-hidden"
+        <div className="w-full h-full relative group overflow-hidden flex items-center justify-center"
             style={{
                 backgroundImage: "url('/assets/Water.png')",
                 backgroundRepeat: "repeat",
                 imageRendering: "pixelated",
-                backgroundSize: "64px 256px"
+                backgroundSize: "5.33% 32%" // 64px/1200px, 256px/800px
             }}
         >
-            {/* Grass Container (600x600 Centered) */}
+            {/* Game Stage Container - Aspect Ratio 3:2 (1200x800) */}
             <div style={{
-                position: "absolute",
-                width: FARM_SIZE,
-                height: FARM_SIZE,
-                left: "50%",
-                top: "50%",
-                transform: "translate(-50%, -50%)"
+                width: "100%",
+                maxWidth: "150vh", // Ensures width doesn't exceed 1.5x height (maintaining 3:2 aspect ratio within viewport)
+                aspectRatio: "3/2",
+                position: "relative",
             }}>
-                {/* Grass Background */}
-                <img
-                    src="/assets/focus-farm-grass.png"
-                    alt="Grass"
-                    style={{
-                        position: "absolute",
-                        width: FARM_SIZE,
-                        height: FARM_SIZE,
-                        left: 0,
-                        top: 0,
-                        imageRendering: "pixelated"
-                    }}
-                />
 
-                {/* Fences */}
-                {/* Left */}
-                <img src="/assets/Fences-vertical.png" style={{
-                    position: "absolute", width: FENCE_V_WIDTH, height: FENCE_V_HEIGHT,
-                    left: 0, top: (FARM_SIZE - FENCE_V_HEIGHT) / 2,
-                    imageRendering: "pixelated", zIndex: 5
-                }} />
+                {/* Farm Plot Container (Increased size by ~5%) */}
+                <div style={{
+                    position: "absolute",
+                    width: "55%", // Increased from 50%
+                    height: "80%", // Increased from 75%
+                    left: "2%",
+                    top: "50%",
+                    transform: "translate(10%, -50%)" // Kept user's adjustment
+                }}>
+                    {/* Grass Background */}
+                    <img
+                        src="/assets/focus-farm-grass.png"
+                        alt="Grass"
+                        style={{
+                            position: "absolute",
+                            width: "100%",
+                            height: "100%",
+                            left: 0,
+                            top: 0,
+                            imageRendering: "pixelated"
+                        }}
+                    />
 
-                {/* Right */}
-                <img src="/assets/Fences-vertical.png" style={{
-                    position: "absolute", width: FENCE_V_WIDTH, height: FENCE_V_HEIGHT,
-                    left: FARM_SIZE - FENCE_V_WIDTH, top: (FARM_SIZE - FENCE_V_HEIGHT) / 2,
-                    imageRendering: "pixelated", zIndex: 5
-                }} />
+                    {/* Fences */}
+                    {/* Vertical Fences: 70x500 relative to 600x600 => 11.66% x 83.33% */}
+                    {/* Left */}
+                    <img src="/assets/Fences-vertical.png" style={{
+                        position: "absolute", width: "11.66%", height: "83.33%",
+                        left: 0, top: "8.33%", // (100-83.33)/2
+                        imageRendering: "pixelated", zIndex: 5
+                    }} />
 
-                {/* Top */}
-                <img src="/assets/Fences-horizontal.png" style={{
-                    position: "absolute", width: FENCE_H_WIDTH, height: FENCE_H_HEIGHT,
-                    left: (FARM_SIZE - FENCE_H_WIDTH) / 2, top: 0,
-                    imageRendering: "pixelated", zIndex: 5
-                }} />
+                    {/* Right */}
+                    <img src="/assets/Fences-vertical.png" style={{
+                        position: "absolute", width: "11.66%", height: "83.33%",
+                        right: 0, top: "8.33%",
+                        imageRendering: "pixelated", zIndex: 5
+                    }} />
 
-                {/* Bottom */}
-                <img src="/assets/Fences-horizontal.png" style={{
-                    position: "absolute", width: FENCE_H_WIDTH, height: FENCE_H_HEIGHT,
-                    left: (FARM_SIZE - FENCE_H_WIDTH) / 2, top: FARM_SIZE - FENCE_H_HEIGHT,
-                    imageRendering: "pixelated", zIndex: 5
-                }} />
+                    {/* Horizontal Fences: 500x70 relative to 600x600 => 83.33% x 11.66% */}
+                    {/* Top */}
+                    <img src="/assets/Fences-horizontal.png" style={{
+                        position: "absolute", width: "83.33%", height: "11.66%",
+                        left: "8.33%", top: 0,
+                        imageRendering: "pixelated", zIndex: 5
+                    }} />
 
-                {/* Corn Row */}
-                {Array.from({ length: CORN_COUNT }).map((_, i) => {
-                    const stage = getStage(elapsedSeconds, i, CORN_GROWTH_SEC, CORN_STAGGER_SEC, CORN_MAX_STAGE);
-                    return (
-                        <img
-                            key={"corn-" + i}
-                            src={cornImages[stage]}
-                            alt={`Corn ${i}`}
-                            style={{
-                                position: "absolute",
-                                width: 64, height: 64,
-                                left: cornXStart + i * cornSpacing,
-                                top: cornY,
-                                imageRendering: "pixelated",
-                                zIndex: 10
-                            }}
-                        />
-                    );
-                })}
+                    {/* Bottom */}
+                    <img src="/assets/Fences-horizontal.png" style={{
+                        position: "absolute", width: "83.33%", height: "11.66%",
+                        left: "8.33%", bottom: 0,
+                        imageRendering: "pixelated", zIndex: 5
+                    }} />
 
-                {/* Cherry Row */}
-                {Array.from({ length: CHERRY_COUNT }).map((_, i) => {
-                    const stage = getStage(elapsedSeconds, i, CHERRY_GROWTH_SEC, CHERRY_STAGGER_SEC, CHERRY_MAX_STAGE);
-                    return (
-                        <img
-                            key={"cherry-" + i}
-                            src={cherryImages[stage]}
-                            alt={`Cherry ${i}`}
-                            style={{
-                                position: "absolute",
-                                width: 64, height: 64,
-                                left: cherryXStart + i * cherrySpacing,
-                                top: cherryY_Prompt,
-                                imageRendering: "pixelated",
-                                zIndex: 10
-                            }}
-                        />
-                    );
-                })}
-            </div>
+                    {/* Plants Grid */}
+                    {/* 
+                        CornXStart: 110/600 = 18.33%
+                        CornY: 110/600 = 18.33%
+                        Spacing: 100/600 = 16.66%
+                        Row Spacing: 90/600 = 15%
+                        Size: 64/600 = 10.66%
+                    */}
+                    {Array.from({ length: 5 }).map((_, rowIndex) => {
+                        return Array.from({ length: 4 }).map((_, colIndex) => {
+                            const globalIndex = rowIndex * 4 + colIndex;
 
-            {/* Start/Stop Button Overlay */}
-            <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-20">
+                            let plantImages: string[] = [];
+                            if (rowIndex === 0 || rowIndex === 2 || rowIndex === 4) {
+                                plantImages = cornImages;
+                            } else if (rowIndex === 1 || rowIndex === 3) {
+                                plantImages = cherryImages;
+                            }
+
+                            const maxStage = plantImages.length - 1;
+                            const startTime = globalIndex * CORN_STAGGER_SEC;
+
+                            if (elapsedSeconds < startTime) return null;
+
+                            const localTime = elapsedSeconds - startTime;
+                            const stage = Math.min(maxStage, Math.floor((localTime / CORN_GROWTH_SEC) * (maxStage + 1)));
+
+                            return (
+                                <img
+                                    key={`plant-${rowIndex}-${colIndex}`}
+                                    src={plantImages[stage]}
+                                    alt={`Plant ${rowIndex}-${colIndex}`}
+                                    style={{
+                                        position: "absolute",
+                                        width: "10.66%", height: "auto", // Maintain aspect ratio
+                                        left: `${18.33 + colIndex * 16.66}%`,
+                                        top: `${18.33 + rowIndex * 15}%`,
+                                        imageRendering: "pixelated",
+                                        zIndex: 10 + rowIndex
+                                    }}
+                                />
+                            );
+                        });
+                    })}
+                </div>
+
+                {/* Hill and Chicken House Section (Increased size by ~5%) */}
+                <div style={{
+                    position: "absolute",
+                    right: "5%",
+                    top: "50%",
+                    transform: "translate(0, -50%)",
+                    width: "33%", // Increased from 26.25%
+                    height: "50%", // Increased from 39.375%
+                    zIndex: 15
+                }}>
+                    {/* Hill */}
+                    <img
+                        src="/assets/hill1.png"
+                        alt="Hill"
+                        style={{
+                            position: "absolute",
+                            width: "100%",
+                            height: "100%",
+                            imageRendering: "pixelated"
+                        }}
+                    />
+                    {/* Chicken House */}
+                    <img
+                        src="/assets/Chicken_House.png"
+                        alt="Chicken House"
+                        style={{
+                            position: "absolute",
+                            width: "47.6%",
+                            height: "auto",
+                            left: "50%",
+                            top: "20%",
+                            transform: "translate(-50%, -100%)",
+                            imageRendering: "pixelated",
+                            zIndex: 20
+                        }}
+                    />
+
+                    {/* Egg / Chicken Animation */}
+                    {elapsedSeconds > ALL_GROWN_TIME && (() => {
+                        // Use precise time for smooth animation
+                        const preciseElapsedSeconds = elapsedMs / 1000;
+                        const animTime = preciseElapsedSeconds - ALL_GROWN_TIME;
+
+                        // Egg Spawn Logic based on ratios relative to Chicken House
+                        // Hill Container: Width 33% (396px), Height 50% (400px) -> Ratio 0.99 (approx 1:1)
+                        // House Width: 47.6% of Hill Width
+                        // House Height: Auto (Square image) -> Height in px = Width in px
+                        // House Height % of Hill Height = 47.6 * (HillWidth/HillHeight) = 47.6 * (33/50) = 31.42%
+
+                        // House Position:
+                        // Left: 50% - (47.6%/2) = 26.2%
+                        // Top (Visual): 20% - 31.42% = -11.42% (due to translate -100%)
+
+                        // Egg Offsets (Ratios of House Dimensions):
+                        // X Ratio: 70/150 = 0.4666
+                        // Y Ratio: 107/150 = 0.7133
+
+                        // Egg Start X = 26.2 + (47.6 * 0.4666) = 48.41%
+                        // Egg Start Y = -11.42 + (31.42 * 0.7133) = -11.42 + 22.41 = 10.99%
+
+                        const startLeft = 48.41;
+                        const startTop = 10.99;
+
+                        // Slide Distance: 25% of House Height
+                        // Dist = 31.42 * 0.25 = 7.855%
+                        const targetTop = startTop + 7.855;
+
+                        if (animTime < SLIDE_DURATION) {
+                            // Slide Phase
+                            const progress = animTime / SLIDE_DURATION;
+                            const currentTop = startTop + (targetTop - startTop) * progress;
+
+                            return (
+                                <img
+                                    src="/assets/Egg_item.png"
+                                    alt="Egg"
+                                    style={{
+                                        position: "absolute",
+                                        width: "10%", height: "auto", // Approx size
+                                        left: `${startLeft}%`,
+                                        top: `${currentTop}%`,
+                                        transform: "translate(-50%, -50%)",
+                                        imageRendering: "pixelated",
+                                        zIndex: 25
+                                    }}
+                                />
+                            );
+                        } else {
+                            // Chicken Phase
+                            const chickenTime = animTime - SLIDE_DURATION;
+                            const isFrame1 = Math.floor(chickenTime / 0.5) % 2 === 0; // Toggle every 0.5s
+
+                            return (
+                                <img
+                                    src={isFrame1 ? "/assets/chicken1.png" : "/assets/chicken2.png"}
+                                    alt="Chicken"
+                                    style={{
+                                        position: "absolute",
+                                        width: "15%", height: "auto", // Approx size
+                                        left: `${startLeft}%`,
+                                        top: `${targetTop}%`,
+                                        transform: "translate(-50%, -50%)",
+                                        imageRendering: "pixelated",
+                                        zIndex: 25
+                                    }}
+                                />
+                            );
+                        }
+                    })()}
+                </div>
+
+                {/* Start/Stop Button */}
                 <button
                     onClick={toggleTimer}
-                    className={clsx(
-                        "font-bold py-3 px-8 rounded-full shadow-lg transition-all transform hover:scale-105 active:scale-95 min-w-[140px]",
-                        isPlaying
-                            ? "bg-red-500 hover:bg-red-400 text-white hover:shadow-red-500/20"
-                            : "bg-emerald-500 hover:bg-emerald-400 text-black hover:shadow-emerald-500/20"
-                    )}
+                    style={{
+                        position: "absolute",
+                        left: "37%", // Centered relative to Farm Plot (2% + 20% offset + 55%/2 width approx)
+                        top: "92%",
+                        transform: "translate(50%, -15%)",
+                        backgroundImage: `url('${isPlaying ? '/assets/stop-btn.png' : '/assets/start-btn.png'}')`,
+                        backgroundSize: "100% 100%",
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: "center",
+                        width: "15%", // Scaled up
+                        height: "12%", // Scaled up
+                        border: "none",
+                        cursor: "pointer",
+                        imageRendering: "pixelated",
+                        zIndex: 30,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "white",
+                        fontFamily: "'Pixelify Sans', sans-serif", // Assuming this font is available globally
+                        fontSize: "1.5rem",
+                        textShadow: "2px 2px 0 #000",
+                        outline: "none"
+                    }}
                 >
                     {isPlaying ? 'Stop' : 'Start'}
                 </button>
+
+                {/* Counters */}
+                <div style={{
+                    position: "absolute",
+                    top: "2%",
+                    right: "2%",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                    fontFamily: "'Pixelify Sans', sans-serif",
+                    color: "white",
+                    textShadow: "2px 2px 0 #000",
+                    zIndex: 40,
+                    fontSize: "1.2rem"
+                }}>
+                    <div>
+                        Plants: {(() => {
+                            let count = 0;
+                            const totalRows = 5;
+                            const totalCols = 4;
+                            for (let r = 0; r < totalRows; r++) {
+                                for (let c = 0; c < totalCols; c++) {
+                                    const gIndex = r * 4 + c;
+                                    const sTime = gIndex * CORN_STAGGER_SEC;
+                                    if (elapsedSeconds >= sTime + CORN_GROWTH_SEC) {
+                                        count++;
+                                    }
+                                }
+                            }
+                            return count;
+                        })()} / 20
+                    </div>
+                    <div>
+                        Chickens: {elapsedSeconds > ALL_GROWN_TIME + SLIDE_DURATION ? 1 : 0}
+                    </div>
+                </div>
+
             </div>
         </div>
     );
 };
+
