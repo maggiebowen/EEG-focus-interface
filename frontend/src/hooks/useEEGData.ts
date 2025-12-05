@@ -46,12 +46,16 @@ export const useEEGData = () => {
 
         socketRef.current.on('eeg_metric', (payload) => {
             const { focus_score, state, eeg_ch1, eeg_ch2, eeg_ch3, eeg_ch4, eeg_ch5, eeg_ch6, eeg_ch7, eeg_ch8 } = payload;
-            // console.log('[Frontend] Received metric:', { focus_score, state });
+            console.log('[Frontend] Received metric:', { focus_score, state, hasChannels: {
+                ch1: !!eeg_ch1, ch2: !!eeg_ch2, ch3: !!eeg_ch3, ch4: !!eeg_ch4,
+                ch5: !!eeg_ch5, ch6: !!eeg_ch6, ch7: !!eeg_ch7, ch8: !!eeg_ch8
+            }});
 
             // Update channel values (calculate average of each channel for display)
-            if (eeg_ch1 && eeg_ch2 && eeg_ch3 && eeg_ch4 && eeg_ch5 && eeg_ch6 && eeg_ch7 && eeg_ch8) {
-                const channels = [eeg_ch1, eeg_ch2, eeg_ch3, eeg_ch4, eeg_ch5, eeg_ch6, eeg_ch7, eeg_ch8];
+            const channels = [eeg_ch1, eeg_ch2, eeg_ch3, eeg_ch4, eeg_ch5, eeg_ch6, eeg_ch7, eeg_ch8];
+            if (channels.some(ch => ch && ch.length > 0)) {
                 const channelAverages = channels.map(ch => {
+                    if (!ch || ch.length === 0) return 0;
                     const sum = ch.reduce((a: number, b: number) => a + b, 0);
                     return sum / ch.length;
                 });
