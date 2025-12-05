@@ -26,11 +26,6 @@ export const DashboardLayout: React.FC = () => {
     const displayFocusTimeMs = focusTimeMs;
     const [showStats, setShowStats] = useState(true);
 
-    // Debug: log state changes
-    React.useEffect(() => {
-        console.log('[Dashboard] State:', { isCalibrating, hasReceivedData, focusScore, isPlaying });
-    }, [isCalibrating, hasReceivedData, focusScore, isPlaying]);
-
     // Format time for display
     const totalSeconds = Math.floor(elapsedMs / 1000);
     const m = Math.floor(totalSeconds / 60);

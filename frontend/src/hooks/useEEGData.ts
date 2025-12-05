@@ -34,19 +34,11 @@ export const useEEGData = () => {
         socketRef.current = io(BACKEND_URL);
 
         socketRef.current.on('connect', () => {
-            console.log('Connected to EEG backend');
             setIsConnected(true);
         });
 
-        // Debug: Log ALL socket events
-        socketRef.current.onAny((eventName, ...args) => {
-            console.log(`[Socket Event] ${eventName}:`, args);
-        });
-
         socketRef.current.on('eeg_metric', (payload) => {
-            const { focus_score, raw_alpha, state, z_score } = payload;
-            
-            console.log(`[eeg_metric] State: ${state} | Focus: ${focus_score} | Alpha: ${raw_alpha?.toFixed(2)} | Z: ${z_score?.toFixed(2)}`);
+            const { focus_score, raw_alpha, state } = payload;
             
             // Skip updates during calibration (backend sends 0s)
             if (state === 'CALIBRATING') {
@@ -57,7 +49,6 @@ export const useEEGData = () => {
             if (state === 'RUNNING') {
                 // Force exit calibration if we receive RUNNING data
                 if (isCalibrating) {
-                    console.log('⚠️ Received RUNNING data while in calibration - forcing exit');
                     setIsCalibrating(false);
                     setIsPlaying(true);
                     startTimeRef.current = Date.now();
@@ -65,7 +56,6 @@ export const useEEGData = () => {
                 }
                 
                 setHasReceivedData(true);
-                console.log(`✓ RUNNING data received! Focus score: ${focus_score}`);
             }
             
             // Update focus score
@@ -114,13 +104,10 @@ export const useEEGData = () => {
         });
 
         socketRef.current.on('calibration_progress', ({ progress }) => {
-            console.log('Calibration progress:', progress);
             setCalibrationProgress(progress);
         });
 
-        socketRef.current.on('calibration_done', (data) => {
-            console.log('✓ Backend calibration complete - SYNCED START', data);
-            
+        socketRef.current.on('calibration_done', () => {
             // Force exit calibration and start session
             setIsCalibrating(false);
             setIsPlaying(true);
@@ -130,7 +117,6 @@ export const useEEGData = () => {
         });
 
         socketRef.current.on('disconnect', () => {
-            console.log('Disconnected from EEG backend');
             setIsConnected(false);
         });
 
@@ -173,7 +159,6 @@ export const useEEGData = () => {
                 calibrationStartRef.current = Date.now();
                 
                 // Start streaming (calibration now starts automatically on backend)
-                console.log('Starting stream and calibration...');
                 await fetch(`${BACKEND_URL}/api/start`, { method: 'POST' });
                 
             } catch (error) {
