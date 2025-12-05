@@ -45,7 +45,7 @@ export const useEEGData = () => {
         });
 
         socketRef.current.on('eeg_metric', (payload) => {
-            const { focus_score, raw_alpha, state } = payload;
+            const { focus_score, state } = payload;
             // console.log('[Frontend] Received metric:', { focus_score, state });
 
             // Skip updates during calibration (backend sends 0s)

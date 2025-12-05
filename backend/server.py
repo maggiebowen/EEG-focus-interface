@@ -244,9 +244,6 @@ def stream_data_loop():
                         payload = {
                             'timestamp': time.time(),
                             'focus_score': percent_score, # Ora è 0-100
-                            'z_score': current_z_score,
-                            'raw_alpha': current_alpha,
-                            'bad_channels': bad_channels,
                             'eeg_ch1': window_buffer[0].tolist(),
                             'eeg_ch2': window_buffer[1].tolist(),
                             'eeg_ch3': window_buffer[2].tolist(),
