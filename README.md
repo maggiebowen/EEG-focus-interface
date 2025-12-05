@@ -196,10 +196,10 @@ EEG-focus-interface/
 
 ## 👥 Team
 
-@maggiebowen
-@sojoudjebril
-@Marcop-00
-@Lafio8
+- @maggiebowen
+- @sojoudjebril
+- @Marcop-00
+- @Lafio8
 
 ## 📄 License
 
