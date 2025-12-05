@@ -12,9 +12,10 @@ interface StatsPanelProps {
     alphaHistory: number[];
     focusTimeMs: number;
     statusMessage: string;
+    channelValues: number[];
 }
 
-export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats, alphaHistory, focusTimeMs, statusMessage }) => {
+export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats, alphaHistory, focusTimeMs, statusMessage, channelValues }) => {
 
 
     const getScoreColor = (score: number) => {
@@ -88,67 +89,34 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
                 </div>
             </div>
 
-            {/* Alpha Wave Graph */}
+            {/* EEG Channel Values */}
             <div className="bg-surface rounded-2xl p-4 border border-white/5 flex-1 min-h-0 flex flex-col">
-                <h3 className="text-gray-400 text-sm font-medium mb-4 shrink-0">Alpha Waves (8-13 Hz)</h3>
-                <div className="flex-1 relative min-h-0 flex gap-2">
-                    {/* Y-axis labels */}
-                    <div className="flex flex-col justify-between text-xs text-gray-500 w-12 shrink-0">
-                        <span>100%</span>
-                        <span>50%</span>
-                        <span>0%</span>
-                    </div>
-                    <svg className="w-full h-full" viewBox="0 0 300 100" preserveAspectRatio="none">
-                        {/* Grid lines */}
-                        <line x1="0" y1="25" x2="300" y2="25" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
-                        <line x1="0" y1="50" x2="300" y2="50" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
-                        <line x1="0" y1="75" x2="300" y2="75" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
-
-                        {/* Alpha wave line */}
-                        {alphaHistory.length > 1 && (
-                            <polyline
-                                points={alphaHistory.map((value, index) => {
-                                    const x = (index / (alphaHistory.length - 1)) * 300;
-                                    const y = 100 - (value * 100);
-                                    return `${x},${y}`;
-                                }).join(' ')}
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                className="text-emerald-400"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
-                        )}
-
-                        {/* Gradient fill under line */}
-                        {alphaHistory.length > 1 && (
-                            <>
-                                <defs>
-                                    <linearGradient id="alphaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                                        <stop offset="0%" stopColor="rgb(52, 211, 153)" stopOpacity="0.3" />
-                                        <stop offset="100%" stopColor="rgb(52, 211, 153)" stopOpacity="0" />
-                                    </linearGradient>
-                                </defs>
-                                <polygon
-                                    points={`0,100 ${alphaHistory.map((value, index) => {
-                                        const x = (index / (alphaHistory.length - 1)) * 300;
-                                        const y = 100 - (value * 100);
-                                        return `${x},${y}`;
-                                    }).join(' ')} 300,100`}
-                                    fill="url(#alphaGradient)"
-                                />
-                            </>
-                        )}
-                    </svg>
+                <h3 className="text-gray-400 text-sm font-medium mb-4 shrink-0">EEG Channel Values (μV)</h3>
+                <div className="grid grid-cols-2 gap-3 flex-1">
+                    {channelValues.map((value, index) => {
+                        const channelNum = index + 1;
+                        const absValue = Math.abs(value);
+                        const displayValue = absValue.toFixed(2);
+                        
+                        // Color based on signal strength
+                        let color = 'text-gray-400';
+                        if (absValue > 50) color = 'text-red-400';
+                        else if (absValue > 25) color = 'text-orange-400';
+                        else if (absValue > 10) color = 'text-yellow-400';
+                        else if (absValue > 0) color = 'text-emerald-400';
+                        
+                        return (
+                            <div key={channelNum} className="bg-white/5 rounded-lg p-3 flex flex-col items-center justify-center">
+                                <span className="text-xs text-gray-500 mb-1">CH{channelNum}</span>
+                                <span className={`text-lg font-bold ${color}`} style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>
+                                    {displayValue}
+                                </span>
+                            </div>
+                        );
+                    })}
                 </div>
-
-                {/* Current alpha value */}
-                <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Current Alpha</span>
-                    <span className="text-sm font-semibold text-emerald-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>
-                        {alphaHistory.length > 0 ? (alphaHistory[alphaHistory.length - 1] * 100).toFixed(1) : '0.0'}%
-                    </span>
+                <div className="mt-3 pt-3 border-t border-white/5 text-xs text-gray-500 text-center">
+                    Real-time EEG signal amplitude
                 </div>
             </div>
 

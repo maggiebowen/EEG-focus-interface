@@ -24,11 +24,9 @@ export const useEEGData = () => {
     const [isConnected, setIsConnected] = useState(false);
     const [hasReceivedData, setHasReceivedData] = useState(false);
     const [calibrationComplete, setCalibrationComplete] = useState(false);
+    const [channelValues, setChannelValues] = useState<number[]>(Array(8).fill(0));
 
-    const maxHistoryPoints = 60; // Keep last 60 data points
     const focusScoreHistoryRef = useRef<number[]>([]);
-    const alphaMinRef = useRef<number>(Infinity);
-    const alphaMaxRef = useRef<number>(-Infinity);
 
     // Initialize WebSocket connection
     useEffect(() => {
@@ -45,8 +43,18 @@ export const useEEGData = () => {
         });
 
         socketRef.current.on('eeg_metric', (payload) => {
-            const { focus_score, state } = payload;
+            const { focus_score, state, eeg_ch1, eeg_ch2, eeg_ch3, eeg_ch4, eeg_ch5, eeg_ch6, eeg_ch7, eeg_ch8 } = payload;
             // console.log('[Frontend] Received metric:', { focus_score, state });
+
+            // Update channel values (calculate average of each channel for display)
+            if (eeg_ch1 && eeg_ch2 && eeg_ch3 && eeg_ch4 && eeg_ch5 && eeg_ch6 && eeg_ch7 && eeg_ch8) {
+                const channels = [eeg_ch1, eeg_ch2, eeg_ch3, eeg_ch4, eeg_ch5, eeg_ch6, eeg_ch7, eeg_ch8];
+                const channelAverages = channels.map(ch => {
+                    const sum = ch.reduce((a: number, b: number) => a + b, 0);
+                    return sum / ch.length;
+                });
+                setChannelValues(channelAverages);
+            }
 
             // Skip updates during calibration (backend sends 0s)
             if (state === 'CALIBRATING') {
@@ -71,25 +79,6 @@ export const useEEGData = () => {
 
             // Update focus score
             setFocusScore(focus_score);
-
-            // Track min/max for normalization
-            if (raw_alpha < alphaMinRef.current) alphaMinRef.current = raw_alpha;
-            if (raw_alpha > alphaMaxRef.current) alphaMaxRef.current = raw_alpha;
-
-            // Normalize alpha to 0-1 range for display
-            const range = alphaMaxRef.current - alphaMinRef.current;
-            const normalizedAlpha = range > 0
-                ? (raw_alpha - alphaMinRef.current) / range
-                : 0.5;
-
-            // Update alpha history with normalized value
-            setAlphaHistory(prev => {
-                const newHistory = [...prev, normalizedAlpha];
-                if (newHistory.length > maxHistoryPoints) {
-                    return newHistory.slice(-maxHistoryPoints);
-                }
-                return newHistory;
-            });
 
             // Track focus score history for average calculation
             focusScoreHistoryRef.current.push(focus_score);
@@ -170,9 +159,8 @@ export const useEEGData = () => {
                 setFocusTimeMs(0);
                 setHasReceivedData(false);
                 setCalibrationComplete(false);
+                setChannelValues(Array(8).fill(0));
                 focusScoreHistoryRef.current = [];
-                alphaMinRef.current = Infinity;
-                alphaMaxRef.current = -Infinity;
 
                 // Start calibration timer
                 setIsCalibrating(true);
@@ -244,6 +232,7 @@ export const useEEGData = () => {
         calibrationProgress,
         isConnected,
         hasReceivedData,
-        calibrationComplete
+        calibrationComplete,
+        channelValues
     };
 };

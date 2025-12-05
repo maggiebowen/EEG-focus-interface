@@ -18,7 +18,8 @@ export const DashboardLayout: React.FC = () => {
         calibrationProgress,
         isConnected,
         hasReceivedData,
-        calibrationComplete
+        calibrationComplete,
+        channelValues
     } = useEEGData();
     // Fallback: when not connected OR haven't received data yet, use mock data for visuals
     const displayFocusScore = focusScore;
@@ -96,6 +97,7 @@ export const DashboardLayout: React.FC = () => {
                             alphaHistory={displayAlphaHistory}
                             focusTimeMs={displayFocusTimeMs}
                             statusMessage={statusMessage}
+                            channelValues={channelValues}
                         />
                     </div>
                 )}
