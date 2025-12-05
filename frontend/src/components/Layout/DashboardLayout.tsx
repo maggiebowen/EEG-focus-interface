@@ -42,13 +42,6 @@ export const DashboardLayout: React.FC = () => {
             {/* Calibration Overlay - hide if we've received running data */}
             {isCalibrating && !hasReceivedData && <CalibrationOverlay progress={calibrationProgress} />}
             
-            {/* Debug Status Banner */}
-            {isConnected && !hasReceivedData && !isCalibrating && (
-                <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-yellow-500/20 border border-yellow-500/50 rounded-lg px-4 py-2 text-yellow-300 text-sm z-50">
-                    Connected to server - Waiting for EEG data... (Check if device is sending data)
-                </div>
-            )}
-            
             {/* Header */}
             <header className="flex justify-between items-center px-2 shrink-0 h-12">
                 <div className="flex items-center gap-3">

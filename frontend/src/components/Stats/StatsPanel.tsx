@@ -156,32 +156,6 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
                 </div>
             </div>
 
-            {/* Debug Info Panel */}
-            <div className="bg-surface rounded-2xl p-4 border border-white/5 shrink-0">
-                <h3 className="text-gray-400 text-xs font-medium mb-3">Data Flow (Debug)</h3>
-                <div className="space-y-2 text-xs font-mono">
-                    <div className="flex justify-between">
-                        <span className="text-gray-500">Focus Score:</span>
-                        <span className={focusScore > 0 ? "text-green-400" : "text-gray-400"}>{focusScore}</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-gray-500">Updates:</span>
-                        <span className="text-blue-400">{updateCount}</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-gray-500">Alpha History:</span>
-                        <span className="text-purple-400">{alphaHistory.length} points</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-gray-500">Avg Score:</span>
-                        <span className="text-yellow-400">{sessionStats.average.toFixed(1)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span className="text-gray-500">Peak:</span>
-                        <span className="text-orange-400">{sessionStats.peak}</span>
-                    </div>
-                </div>
-            </div>
         </>
     );
 };
