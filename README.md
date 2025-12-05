@@ -196,7 +196,10 @@ EEG-focus-interface/
 
 ## 👥 Team
 
-Developed during BrainHack Lucca 2025
+@maggiebowen
+@sojoudjebril
+@Marcop-00
+@Lafio8
 
 ## 📄 License
 
