@@ -13,9 +13,10 @@ interface StatsPanelProps {
     focusTimeMs: number;
     statusMessage: string;
     channelValues: number[];
+    channelHistory: number[][];
 }
 
-export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats, alphaHistory, focusTimeMs, statusMessage, channelValues }) => {
+export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats, alphaHistory, focusTimeMs, statusMessage, channelValues, channelHistory }) => {
 
 
     const getScoreColor = (score: number) => {
@@ -34,89 +35,110 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
 
     return (
         <>
-            {/* Focus Gauge */}
-            <div className="bg-surface rounded-2xl p-4 border border-white/5 flex flex-col items-center justify-center min-h-[200px] shrink-0">
-                <div className="relative w-32 h-32 flex items-center justify-center">
-                    {/* Background Circle */}
-                    <svg className="w-full h-full transform -rotate-90">
-                        <circle
-                            cx="64"
-                            cy="64"
-                            r="56"
-                            stroke="currentColor"
-                            strokeWidth="8"
-                            fill="transparent"
-                            className="text-white/5"
-                        />
-                        {/* Progress Circle */}
-                        <circle
-                            cx="64"
-                            cy="64"
-                            r="56"
-                            stroke="currentColor"
-                            strokeWidth="8"
-                            fill="transparent"
-                            strokeDasharray={2 * Math.PI * 56}
-                            strokeDashoffset={2 * Math.PI * 56 * (1 - focusScore / 100)}
-                            className={`${getScoreColor(focusScore)} transition-all duration-300 ease-out`}
-                            strokeLinecap="round"
-                        />
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-3xl font-bold" style={{ color: '#664C5A' }}>{Math.round(focusScore)}%</span>
-                        <span className="text-xs mt-0.5" style={{ color: '#664C5A' }}>Focus Score</span>
-                    </div>
-                </div>
-                <div className="mt-4 px-3 py-1.5 bg-orange-500/10 text-orange-400 rounded-full text-xs font-medium border border-orange-500/20">
-                    {statusMessage}
-                </div>
-            </div>
-
-            {/* Timers */}
+            {/* Focus Gauge and Timers Combined */}
             <div className="bg-surface rounded-2xl p-4 border border-white/5 shrink-0">
-                <h3 className="text-gray-400 text-sm font-medium mb-4">Time Tracking</h3>
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col items-center gap-2 bg-white/5 rounded-lg p-3">
-                        <Clock size={16} className="text-emerald-400" />
-                        <span className="text-xs text-gray-500">Session Time</span>
-                        <span className="text-lg font-bold text-emerald-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>{sessionStats.duration}</span>
+                <div className="flex gap-4 items-center">
+                    {/* Focus Gauge */}
+                    <div className="flex flex-col items-center justify-center">
+                        <div className="relative w-28 h-28 flex items-center justify-center">
+                            {/* Background Circle */}
+                            <svg className="w-full h-full transform -rotate-90">
+                                <circle
+                                    cx="56"
+                                    cy="56"
+                                    r="48"
+                                    stroke="currentColor"
+                                    strokeWidth="7"
+                                    fill="transparent"
+                                    className="text-white/5"
+                                />
+                                {/* Progress Circle */}
+                                <circle
+                                    cx="56"
+                                    cy="56"
+                                    r="48"
+                                    stroke="currentColor"
+                                    strokeWidth="7"
+                                    fill="transparent"
+                                    strokeDasharray={2 * Math.PI * 48}
+                                    strokeDashoffset={2 * Math.PI * 48 * (1 - focusScore / 100)}
+                                    className={`${getScoreColor(focusScore)} transition-all duration-300 ease-out`}
+                                    strokeLinecap="round"
+                                />
+                            </svg>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                <span className="text-2xl font-bold" style={{ color: '#664C5A' }}>{Math.round(focusScore)}%</span>
+                                <span className="text-[10px] mt-0.5" style={{ color: '#664C5A' }}>Focus</span>
+                            </div>
+                        </div>
+                        <div className="mt-2 px-2 py-1 bg-orange-500/10 text-orange-400 rounded-full text-[10px] font-medium border border-orange-500/20">
+                            {statusMessage}
+                        </div>
                     </div>
-                    <div className="flex flex-col items-center gap-2 bg-white/5 rounded-lg p-3">
-                        <Timer size={16} className="text-green-400" />
-                        <span className="text-xs text-gray-500">Focus Time</span>
-                        <span className="text-lg font-bold text-green-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>{formatTime(focusTimeMs)}</span>
+
+                    {/* Timers */}
+                    <div className="flex-1 grid grid-cols-2 gap-2">
+                        <div className="flex flex-col items-center gap-1 bg-white/5 rounded-lg p-2">
+                            <Clock size={14} className="text-emerald-400" />
+                            <span className="text-[10px] text-gray-500">Session Time</span>
+                            <span className="text-base font-bold text-emerald-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>{sessionStats.duration}</span>
+                        </div>
+                        <div className="flex flex-col items-center gap-1 bg-white/5 rounded-lg p-2">
+                            <Timer size={14} className="text-green-400" />
+                            <span className="text-[10px] text-gray-500">Focus Time</span>
+                            <span className="text-base font-bold text-green-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>{formatTime(focusTimeMs)}</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* EEG Channel Values */}
-            <div className="bg-surface rounded-2xl p-4 border border-white/5 flex-1 min-h-0 flex flex-col">
-                <h3 className="text-gray-400 text-sm font-medium mb-4 shrink-0">EEG Channel Values (μV)</h3>
-                <div className="grid grid-cols-2 gap-3 flex-1">
-                    {channelValues.map((value, index) => {
+            {/* EEG Channel Plots */}
+            <div className="bg-surface rounded-2xl p-4 border border-white/5 flex-1 min-h-0 flex flex-col overflow-y-auto">
+                <h3 className="text-gray-400 text-sm font-medium mb-4 shrink-0">EEG Channels (μV over time)</h3>
+                <div className="space-y-3">
+                    {channelHistory.map((history, index) => {
                         const channelNum = index + 1;
-                        const absValue = Math.abs(value);
-                        const displayValue = absValue.toFixed(2);
+                        const currentValue = channelValues[index];
                         
-                        // Color based on signal strength
-                        let color = 'text-gray-400';
-                        if (absValue > 50) color = 'text-red-400';
-                        else if (absValue > 25) color = 'text-orange-400';
-                        else if (absValue > 10) color = 'text-yellow-400';
-                        else if (absValue > 0) color = 'text-emerald-400';
+                        // Calculate min/max for this channel's scale
+                        const values = history.length > 0 ? history : [0];
+                        const minVal = Math.min(...values);
+                        const maxVal = Math.max(...values);
+                        const range = maxVal - minVal || 1;
                         
                         return (
-                            <div key={channelNum} className="bg-white/5 rounded-lg p-3 flex flex-col items-center justify-center">
-                                <span className="text-xs text-gray-500 mb-1">CH{channelNum}</span>
-                                <span className={`text-lg font-bold ${color}`} style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>
-                                    {displayValue}
-                                </span>
+                            <div key={channelNum} className="bg-white/5 rounded-lg p-2">
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="text-xs text-gray-400">CH{channelNum}</span>
+                                    <span className="text-xs text-emerald-400" style={{ fontFamily: "'Pixelify Sans', sans-serif" }}>
+                                        {currentValue.toFixed(2)} μV
+                                    </span>
+                                </div>
+                                <svg className="w-full h-12" viewBox="0 0 300 50" preserveAspectRatio="none">
+                                    {/* Baseline */}
+                                    <line x1="0" y1="25" x2="300" y2="25" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
+                                    
+                                    {/* Channel waveform */}
+                                    {history.length > 1 && (
+                                        <polyline
+                                            points={history.map((value, idx) => {
+                                                const x = (idx / Math.max(history.length - 1, 1)) * 300;
+                                                const normalized = (value - minVal) / range;
+                                                const y = 50 - (normalized * 40) - 5; // 5px padding top/bottom
+                                                return `${x},${y}`;
+                                            }).join(' ')}
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="1.5"
+                                            className="text-emerald-400"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    )}
+                                </svg>
                             </div>
                         );
                     })}
-                </div>
-                <div className="mt-3 pt-3 border-t border-white/5 text-xs text-gray-500 text-center">
-                    Real-time EEG signal amplitude
                 </div>
             </div>
 

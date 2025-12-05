@@ -25,7 +25,9 @@ export const useEEGData = () => {
     const [hasReceivedData, setHasReceivedData] = useState(false);
     const [calibrationComplete, setCalibrationComplete] = useState(false);
     const [channelValues, setChannelValues] = useState<number[]>(Array(8).fill(0));
+    const [channelHistory, setChannelHistory] = useState<number[][]>(Array(8).fill(null).map(() => []));
 
+    const maxHistoryPoints = 100; // Keep last 100 data points
     const focusScoreHistoryRef = useRef<number[]>([]);
 
     // Initialize WebSocket connection
@@ -54,6 +56,17 @@ export const useEEGData = () => {
                     return sum / ch.length;
                 });
                 setChannelValues(channelAverages);
+                
+                // Update channel history for plotting
+                setChannelHistory(prev => {
+                    return prev.map((history, idx) => {
+                        const newHistory = [...history, channelAverages[idx]];
+                        if (newHistory.length > maxHistoryPoints) {
+                            return newHistory.slice(-maxHistoryPoints);
+                        }
+                        return newHistory;
+                    });
+                });
             }
 
             // Skip updates during calibration (backend sends 0s)
@@ -160,6 +173,7 @@ export const useEEGData = () => {
                 setHasReceivedData(false);
                 setCalibrationComplete(false);
                 setChannelValues(Array(8).fill(0));
+                setChannelHistory(Array(8).fill(null).map(() => []));
                 focusScoreHistoryRef.current = [];
 
                 // Start calibration timer
@@ -233,6 +247,7 @@ export const useEEGData = () => {
         isConnected,
         hasReceivedData,
         calibrationComplete,
-        channelValues
+        channelValues,
+        channelHistory
     };
 };
