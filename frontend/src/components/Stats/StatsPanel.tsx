@@ -1,6 +1,6 @@
 import React from 'react';
 import { Clock, Timer } from 'lucide-react';
-import clsx from 'clsx';
+
 
 interface StatsPanelProps {
     focusScore: number;
@@ -11,16 +11,12 @@ interface StatsPanelProps {
     };
     alphaHistory: number[];
     focusTimeMs: number;
+    statusMessage: string;
 }
 
-export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats, alphaHistory, focusTimeMs }) => {
-    const [updateCount, setUpdateCount] = React.useState(0);
-    
-    // Track updates
-    React.useEffect(() => {
-        setUpdateCount(prev => prev + 1);
-    }, [focusScore]);
-    
+export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats, alphaHistory, focusTimeMs, statusMessage }) => {
+
+
     const getScoreColor = (score: number) => {
         if (score < 25) return 'text-red-500';
         if (score < 50) return 'text-orange-500';
@@ -66,18 +62,18 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
                         />
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-3xl font-bold">{Math.round(focusScore)}</span>
-                        <span className="text-xs text-gray-400 mt-0.5">Focus</span>
+                        <span className="text-3xl font-bold" style={{ color: '#664C5A' }}>{Math.round(focusScore)}%</span>
+                        <span className="text-xs mt-0.5" style={{ color: '#664C5A' }}>Focus Score</span>
                     </div>
                 </div>
                 <div className="mt-4 px-3 py-1.5 bg-orange-500/10 text-orange-400 rounded-full text-xs font-medium border border-orange-500/20">
-                    Building Focus
+                    {statusMessage}
                 </div>
             </div>
 
             {/* Timers */}
             <div className="bg-surface rounded-2xl p-4 border border-white/5 shrink-0">
-                <h3 className="text-gray-400 text-xs font-medium mb-4">Time Tracking</h3>
+                <h3 className="text-gray-400 text-sm font-medium mb-4">Time Tracking</h3>
                 <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col items-center gap-2 bg-white/5 rounded-lg p-3">
                         <Clock size={16} className="text-emerald-400" />
@@ -94,7 +90,7 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
 
             {/* Alpha Wave Graph */}
             <div className="bg-surface rounded-2xl p-4 border border-white/5 flex-1 min-h-0 flex flex-col">
-                <h3 className="text-gray-400 text-xs font-medium mb-4 shrink-0">Alpha Waves (8-13 Hz)</h3>
+                <h3 className="text-gray-400 text-sm font-medium mb-4 shrink-0">Alpha Waves (8-13 Hz)</h3>
                 <div className="flex-1 relative min-h-0 flex gap-2">
                     {/* Y-axis labels */}
                     <div className="flex flex-col justify-between text-xs text-gray-500 w-12 shrink-0">
@@ -160,10 +156,4 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ focusScore, sessionStats
     );
 };
 
-const StatItem = ({ icon, label, value, color }: { icon: React.ReactNode, label: string, value: string | number, color: string }) => (
-    <div className="flex flex-col items-center gap-2">
-        <div className={clsx("p-2 rounded-full bg-white/5", color)}>{icon}</div>
-        <span className="text-lg font-semibold">{value}</span>
-        <span className="text-xs text-gray-500">{label}</span>
-    </div>
-);
+

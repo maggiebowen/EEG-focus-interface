@@ -162,7 +162,7 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                 <div style={{
                     position: "absolute",
                     right: "5%",
-                    top: "50%",
+                    top: "63%",
                     transform: "translate(0, -50%)",
                     width: "33%", // Increased from 26.25%
                     height: "50%", // Increased from 39.375%
@@ -235,54 +235,100 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                         // Track spawned chicken positions to avoid overlaps
                         const spawnedPositions: Array<{ x: number, y: number }> = [];
 
-                        // Generate random positions with collision avoidance
+                        // Generate random positions with collision avoidance using Best Candidate Algorithm
                         const getChickenTarget = (chickenIndex: number) => {
-                            // Valid area: x: 10-90%, y: 21-70% (below chicken house)
-                            const xMin = 10;
-                            const xMax = 90;
-                            const yMin = 21;
-                            const yMax = 70;
+                            // Valid area with 8% padding from edges
+                            const padding = 8;
+                            const xMin = padding;
+                            const xMax = 100 - padding;
+                            const yMin = padding + 10; // Extra offset from top for the house
+                            const yMax = 100 - padding;
 
-                            // Try to find a non-overlapping position
-                            let attempts = 0;
-                            while (attempts < 200) {
-                                const seed = (chickenIndex * 12345) + (attempts * 6789);
-                                const randomX = ((seed * 9301 + 49297) % 233280) / 233280;
-                                const randomY = ((seed * 7919 + 32143) % 177147) / 177147;
+                            // Stratified sampling: divide area into a grid and assign each chicken to a cell
+                            // This ensures more even distribution across the hill
+                            const gridCols = 5;
+                            const gridRows = 4;
+                            const totalCells = gridCols * gridRows;
 
-                                const targetX = xMin + randomX * (xMax - xMin);
-                                const targetY = yMin + randomY * (yMax - yMin);
+                            // Determine which grid cell this chicken belongs to
+                            const cellIndex = chickenIndex % totalCells;
+                            const cellCol = cellIndex % gridCols;
+                            const cellRow = Math.floor(cellIndex / gridCols);
 
-                                // Check if too close to chicken house
-                                if (targetX >= houseExclusionZone.left && targetX <= houseExclusionZone.right &&
-                                    targetY >= houseExclusionZone.top && targetY <= houseExclusionZone.bottom) {
-                                    attempts++;
-                                    continue;
-                                }
+                            // Calculate cell boundaries
+                            const cellWidth = (xMax - xMin) / gridCols;
+                            const cellHeight = (yMax - yMin) / gridRows;
+                            const cellXMin = xMin + cellCol * cellWidth;
+                            const cellXMax = cellXMin + cellWidth;
+                            const cellYMin = yMin + cellRow * cellHeight;
+                            const cellYMax = cellYMin + cellHeight;
 
-                                // Check distance from other chickens (minimum 15% spacing)
-                                let tooClose = false;
-                                for (const existing of spawnedPositions) {
-                                    const dx = targetX - existing.x;
-                                    const dy = targetY - existing.y;
-                                    const distance = Math.sqrt(dx * dx + dy * dy);
-                                    if (distance < 15) {
-                                        tooClose = true;
-                                        break;
+                            // Best candidate algorithm within the assigned cell
+                            const numCandidates = 15;
+                            let bestCandidate = null;
+                            let maxMinDistance = -1;
+
+                            // Pseudo-random number generator
+                            const getRand = (seed: number) => {
+                                const x = Math.sin(seed) * 10000;
+                                return x - Math.floor(x);
+                            };
+
+                            for (let i = 0; i < numCandidates; i++) {
+                                // Deterministic seed for this candidate
+                                const seedBase = (chickenIndex * 1000) + i;
+                                const r1 = getRand(seedBase * 12.9898);
+                                const r2 = getRand(seedBase * 78.233);
+
+                                // Random position within the assigned cell
+                                const candidateX = cellXMin + r1 * (cellXMax - cellXMin);
+                                const candidateY = cellYMin + r2 * (cellYMax - cellYMin);
+
+                                // 1. Check Exclusion Zone (Chicken House)
+                                // House is roughly: left 26%, top 20%, width 48%, height 32% (relative to hill div)
+                                // Only check overlap if the candidate is somewhat high up (y < 60)
+                                if (candidateY < 60) {
+                                    if (candidateX >= houseExclusionZone.left && candidateX <= houseExclusionZone.right &&
+                                        candidateY >= houseExclusionZone.top && candidateY <= houseExclusionZone.bottom) {
+                                        continue;
                                     }
                                 }
 
-                                if (!tooClose) {
-                                    spawnedPositions.push({ x: targetX, y: targetY });
-                                    return { x: targetX, y: targetY };
+                                // 2. Calculate distance to nearest existing chicken
+                                let minDistanceToExisting = Number.MAX_VALUE;
+
+                                if (spawnedPositions.length === 0) {
+                                    minDistanceToExisting = Number.MAX_VALUE;
+                                } else {
+                                    for (const existing of spawnedPositions) {
+                                        const dx = candidateX - existing.x;
+                                        // Adjust dy for aspect ratio if needed, but simple distance is usually fine for distribution
+                                        // Hill aspect ratio is width 33% vs height 50% of parent 3:2. 
+                                        // 33% of 1200 = 396px. 50% of 800 = 400px. Almost square 1:1 in pixels!
+                                        // So percentage distance is roughly isotropic.
+                                        const dy = candidateY - existing.y;
+                                        const dist = Math.sqrt(dx * dx + dy * dy);
+                                        if (dist < minDistanceToExisting) {
+                                            minDistanceToExisting = dist;
+                                        }
+                                    }
                                 }
 
-                                attempts++;
+                                if (minDistanceToExisting > maxMinDistance) {
+                                    maxMinDistance = minDistanceToExisting;
+                                    bestCandidate = { x: candidateX, y: candidateY };
+                                }
                             }
 
-                            // Fallback: place in a safe spot
-                            const fallbackX = 15 + (chickenIndex % 10) * 7;
-                            const fallbackY = 30 + Math.floor(chickenIndex / 10) * 15;
+                            // If we found a valid candidate (even if close to others), use it.
+                            if (bestCandidate) {
+                                spawnedPositions.push(bestCandidate);
+                                return bestCandidate;
+                            }
+
+                            // Fallback: place in center of assigned cell
+                            const fallbackX = cellXMin + cellWidth / 2;
+                            const fallbackY = cellYMin + cellHeight / 2;
                             spawnedPositions.push({ x: fallbackX, y: fallbackY });
                             return { x: fallbackX, y: fallbackY };
                         };
@@ -432,10 +478,10 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        color: "white",
-                        fontFamily: "'Pixelify Sans', sans-serif", // Assuming this font is available globally
+                        color: "#664C5A",
+                        fontFamily: "'Pixelify Sans', sans-serif",
                         fontSize: "1.5rem",
-                        textShadow: "2px 2px 0 #000",
+                        fontWeight: "bold",
                         outline: "none"
                     }}
                 >
@@ -447,14 +493,21 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                     position: "absolute",
                     top: "2%",
                     right: "2%",
+                    backgroundImage: "url('/assets/counter.png')",
+                    backgroundSize: "100% 100%",
+                    backgroundRepeat: "no-repeat",
+                    imageRendering: "pixelated",
+                    padding: "30px 32px",
+                    minWidth: "250px",
                     display: "flex",
                     flexDirection: "column",
+                    alignItems: "center",
                     gap: "8px",
                     fontFamily: "'Pixelify Sans', sans-serif",
                     color: "white",
-                    textShadow: "2px 2px 0 #000",
+                    fontWeight: "regular",
+                    fontSize: "1rem",
                     zIndex: 40,
-                    fontSize: "1.2rem"
                 }}>
                     <div>
                         Plants: {(() => {
@@ -482,4 +535,3 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
         </div>
     );
 };
-

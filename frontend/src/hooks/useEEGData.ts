@@ -24,7 +24,7 @@ export const useEEGData = () => {
     const [isConnected, setIsConnected] = useState(false);
     const [hasReceivedData, setHasReceivedData] = useState(false);
     const [calibrationComplete, setCalibrationComplete] = useState(false);
-    
+
     const maxHistoryPoints = 60; // Keep last 60 data points
     const focusScoreHistoryRef = useRef<number[]>([]);
     const alphaMinRef = useRef<number>(Infinity);
@@ -39,19 +39,20 @@ export const useEEGData = () => {
             console.log('[Frontend] Connected to backend');
             setIsConnected(true);
         });
-        
+
         socketRef.current.on('connect_error', (error) => {
             console.error('[Frontend] Connection error:', error);
         });
 
         socketRef.current.on('eeg_metric', (payload) => {
             const { focus_score, raw_alpha, state } = payload;
-            
+            // console.log('[Frontend] Received metric:', { focus_score, state });
+
             // Skip updates during calibration (backend sends 0s)
             if (state === 'CALIBRATING') {
                 return;
             }
-            
+
             // Mark that we've received actual data
             if (state === 'RUNNING') {
                 // Force exit calibration if we receive RUNNING data
@@ -64,23 +65,23 @@ export const useEEGData = () => {
                     startTimeRef.current = Date.now();
                     calibrationStartRef.current = null;
                 }
-                
+
                 setHasReceivedData(true);
             }
-            
+
             // Update focus score
             setFocusScore(focus_score);
-            
+
             // Track min/max for normalization
             if (raw_alpha < alphaMinRef.current) alphaMinRef.current = raw_alpha;
             if (raw_alpha > alphaMaxRef.current) alphaMaxRef.current = raw_alpha;
-            
+
             // Normalize alpha to 0-1 range for display
             const range = alphaMaxRef.current - alphaMinRef.current;
-            const normalizedAlpha = range > 0 
-                ? (raw_alpha - alphaMinRef.current) / range 
+            const normalizedAlpha = range > 0
+                ? (raw_alpha - alphaMinRef.current) / range
                 : 0.5;
-            
+
             // Update alpha history with normalized value
             setAlphaHistory(prev => {
                 const newHistory = [...prev, normalizedAlpha];
@@ -123,7 +124,7 @@ export const useEEGData = () => {
             // Set progress to 100% first
             setCalibrationProgress(1.0);
             setCalibrationComplete(true);
-            
+
             // Small delay to show 100% completion before hiding overlay
             setTimeout(() => {
                 setIsCalibrating(false);
@@ -172,16 +173,16 @@ export const useEEGData = () => {
                 focusScoreHistoryRef.current = [];
                 alphaMinRef.current = Infinity;
                 alphaMaxRef.current = -Infinity;
-                
+
                 // Start calibration timer
                 setIsCalibrating(true);
                 isCalibratingRef.current = true;
                 setCalibrationProgress(0);
                 calibrationStartRef.current = Date.now();
-                
+
                 // Start streaming (calibration now starts automatically on backend)
                 await fetch(`${BACKEND_URL}/api/start`, { method: 'POST' });
-                
+
             } catch (error) {
                 console.error('Error starting stream:', error);
                 setIsCalibrating(false);
