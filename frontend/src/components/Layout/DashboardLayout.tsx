@@ -17,7 +17,8 @@ export const DashboardLayout: React.FC = () => {
         isCalibrating,
         calibrationProgress,
         isConnected,
-        hasReceivedData
+        hasReceivedData,
+        calibrationComplete
     } = useEEGData();
     // Fallback: when not connected OR haven't received data yet, use mock data for visuals
     const displayFocusScore = focusScore;
@@ -34,8 +35,8 @@ export const DashboardLayout: React.FC = () => {
 
     return (
         <div className="h-screen w-screen bg-background text-white p-4 flex flex-col gap-4 overflow-hidden relative">
-            {/* Calibration Overlay - hide if we've received running data */}
-            {isCalibrating && !hasReceivedData && <CalibrationOverlay progress={calibrationProgress} />}
+            {/* Calibration Overlay - show only while calibrating and not complete */}
+            {isCalibrating && !calibrationComplete && <CalibrationOverlay progress={calibrationProgress} />}
             
             {/* Header */}
             <header className="flex justify-between items-center px-2 shrink-0 h-12">

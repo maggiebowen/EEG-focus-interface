@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 
-const BACKEND_URL = 'http://localhost:5000';
-const CALIBRATION_DURATION_MS = 15000; // 15 seconds
+const BACKEND_URL = 'http://localhost:5001';
 
 export const useEEGData = () => {
     const [isPlaying, setIsPlaying] = useState(false);
@@ -10,6 +9,7 @@ export const useEEGData = () => {
     const startTimeRef = useRef<number | null>(null);
     const socketRef = useRef<Socket | null>(null);
     const calibrationStartRef = useRef<number | null>(null);
+    const isCalibratingRef = useRef<boolean>(false);
 
     // Real EEG Data State
     const [focusScore, setFocusScore] = useState(0);
@@ -23,6 +23,7 @@ export const useEEGData = () => {
     const [calibrationProgress, setCalibrationProgress] = useState(0);
     const [isConnected, setIsConnected] = useState(false);
     const [hasReceivedData, setHasReceivedData] = useState(false);
+    const [calibrationComplete, setCalibrationComplete] = useState(false);
     
     const maxHistoryPoints = 60; // Keep last 60 data points
     const focusScoreHistoryRef = useRef<number[]>([]);
@@ -31,10 +32,16 @@ export const useEEGData = () => {
 
     // Initialize WebSocket connection
     useEffect(() => {
+        console.log('[Frontend] Connecting to:', BACKEND_URL);
         socketRef.current = io(BACKEND_URL);
 
         socketRef.current.on('connect', () => {
+            console.log('[Frontend] Connected to backend');
             setIsConnected(true);
+        });
+        
+        socketRef.current.on('connect_error', (error) => {
+            console.error('[Frontend] Connection error:', error);
         });
 
         socketRef.current.on('eeg_metric', (payload) => {
@@ -48,8 +55,11 @@ export const useEEGData = () => {
             // Mark that we've received actual data
             if (state === 'RUNNING') {
                 // Force exit calibration if we receive RUNNING data
-                if (isCalibrating) {
+                if (isCalibratingRef.current) {
+                    setCalibrationProgress(1.0);
+                    setCalibrationComplete(true);
                     setIsCalibrating(false);
+                    isCalibratingRef.current = false;
                     setIsPlaying(true);
                     startTimeRef.current = Date.now();
                     calibrationStartRef.current = null;
@@ -104,16 +114,24 @@ export const useEEGData = () => {
         });
 
         socketRef.current.on('calibration_progress', ({ progress }) => {
+            console.log('[Frontend] Received calibration_progress:', progress);
             setCalibrationProgress(progress);
         });
 
         socketRef.current.on('calibration_done', () => {
-            // Force exit calibration and start session
-            setIsCalibrating(false);
-            setIsPlaying(true);
+            console.log('[Frontend] Received calibration_done');
+            // Set progress to 100% first
             setCalibrationProgress(1.0);
-            startTimeRef.current = Date.now();
-            calibrationStartRef.current = null;
+            setCalibrationComplete(true);
+            
+            // Small delay to show 100% completion before hiding overlay
+            setTimeout(() => {
+                setIsCalibrating(false);
+                isCalibratingRef.current = false;
+                setIsPlaying(true);
+                startTimeRef.current = Date.now();
+                calibrationStartRef.current = null;
+            }, 500);
         });
 
         socketRef.current.on('disconnect', () => {
@@ -133,6 +151,7 @@ export const useEEGData = () => {
             setIsPlaying(false);
             startTimeRef.current = null;
             setIsCalibrating(false);
+            isCalibratingRef.current = false;
             calibrationStartRef.current = null;
             setHasReceivedData(false);
             try {
@@ -149,12 +168,14 @@ export const useEEGData = () => {
                 setSessionStats({ average: 0, peak: 0 });
                 setFocusTimeMs(0);
                 setHasReceivedData(false);
+                setCalibrationComplete(false);
                 focusScoreHistoryRef.current = [];
                 alphaMinRef.current = Infinity;
                 alphaMaxRef.current = -Infinity;
                 
                 // Start calibration timer
                 setIsCalibrating(true);
+                isCalibratingRef.current = true;
                 setCalibrationProgress(0);
                 calibrationStartRef.current = Date.now();
                 
@@ -169,20 +190,33 @@ export const useEEGData = () => {
         }
     };
 
-    // Calibration timer - enforce minimum 15 seconds
-    // Calibration timer - track progress visually but wait for backend signal
+    // Calibration timer - automatically hide overlay after 10 seconds
     useEffect(() => {
         if (!isCalibrating || !calibrationStartRef.current) return;
 
-        const interval = setInterval(() => {
+        // Update progress every 100ms
+        const progressInterval = setInterval(() => {
             const elapsed = Date.now() - calibrationStartRef.current!;
-            
-            // Cap progress at 99% - only backend calibration_done can complete it
-            const progress = Math.min(elapsed / CALIBRATION_DURATION_MS, 0.99);
+            const progress = Math.min(elapsed / 10000, 1.0);
             setCalibrationProgress(progress);
         }, 100);
 
-        return () => clearInterval(interval);
+        // Hide overlay after 10 seconds
+        const hideTimer = setTimeout(() => {
+            console.log('[Frontend] 10 seconds elapsed, hiding calibration overlay');
+            setCalibrationProgress(1.0);
+            setIsCalibrating(false);
+            isCalibratingRef.current = false;
+            setCalibrationComplete(true);
+            setIsPlaying(true);
+            startTimeRef.current = Date.now();
+            calibrationStartRef.current = null;
+        }, 10000);
+
+        return () => {
+            clearInterval(progressInterval);
+            clearTimeout(hideTimer);
+        };
     }, [isCalibrating]);
 
     // Session timer - update elapsed time when playing
@@ -208,6 +242,7 @@ export const useEEGData = () => {
         isCalibrating,
         calibrationProgress,
         isConnected,
-        hasReceivedData
+        hasReceivedData,
+        calibrationComplete
     };
 };

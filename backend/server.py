@@ -196,6 +196,7 @@ def stream_data_loop():
                         progress = min(elapsed / CALIBRATION_DURATION, 1.0)
                         
                         socketio.emit('calibration_progress', {'progress': progress})
+                        print(f"→ Emitted calibration_progress: {progress:.2f}")
                         
                         # Emit placeholder data during calibration so frontend knows we're alive
                         calib_payload = {
@@ -224,6 +225,7 @@ def stream_data_loop():
                                 print(f"{'='*60}\n")
                                 current_state = NeuroState.RUNNING
                                 socketio.emit('calibration_done', {'mu': mu_baseline, 'sigma': sigma_baseline})
+                                print(f"→ Emitted calibration_done event")
                             else:
                                 print("ERROR: No calibration data collected!")
                                 current_state = NeuroState.IDLE
@@ -318,6 +320,6 @@ if __name__ == '__main__':
     try:
         board = KnightBoardServer(serial_port, 8)
         print(f"Server Ready on {serial_port}. Protocol: Alpha Z-Score (uV Scaled).")
-        socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+        socketio.run(app, host='0.0.0.0', port=5001, debug=False)
     except Exception as e:
         print(f"Error: {e}")

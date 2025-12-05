@@ -47,8 +47,8 @@ def on_calibration_done(data):
 
 if __name__ == '__main__':
     try:
-        print("Connecting to http://localhost:5000...")
-        sio.connect('http://localhost:5000')
+        print("Connecting to http://localhost:5001...")
+        sio.connect('http://localhost:5001')
         
         # Keep running
         while True:
@@ -59,4 +59,4 @@ if __name__ == '__main__':
         sio.disconnect()
     except Exception as e:
         print(f"Error: {e}")
-        print("\nMake sure the server is running on port 5000!")
+        print("\nMake sure the server is running on port 5001!")
