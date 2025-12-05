@@ -6,18 +6,21 @@ import { CalibrationOverlay } from './CalibrationOverlay';
 import { useEEGData } from '../../hooks/useEEGData';
 
 export const DashboardLayout: React.FC = () => {
-    const { 
-        isPlaying, 
-        toggleSession, 
-        focusScore, 
-        sessionStats, 
-        alphaHistory, 
+    const {
+        isPlaying,
+        toggleSession,
+        focusScore,
+        sessionStats,
+        alphaHistory,
         focusTimeMs,
         elapsedMs,
         isCalibrating,
         calibrationProgress,
         isConnected,
-        hasReceivedData
+        hasReceivedData,
+        calibrationComplete,
+        channelValues,
+        channelHistory
     } = useEEGData();
     // Fallback: when not connected OR haven't received data yet, use mock data for visuals
     const displayFocusScore = focusScore;
@@ -32,47 +35,53 @@ export const DashboardLayout: React.FC = () => {
     const s = totalSeconds % 60;
     const formattedTime = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 
+    // Determine status message
+    const statusMessage = !isConnected ? 'Connecting...' :
+        isCalibrating ? 'Calibrating...' :
+            !hasReceivedData ? 'Waiting for data...' :
+                'Monitoring Focus';
+
     return (
-        <div className="h-screen w-screen bg-background text-white p-4 flex flex-col gap-4 overflow-hidden relative">
-            {/* Calibration Overlay - hide if we've received running data */}
-            {isCalibrating && !hasReceivedData && <CalibrationOverlay progress={calibrationProgress} />}
-            
+        <div className="h-screen w-screen bg-[#9F7EB1] text-black p-4 flex flex-col gap-4 overflow-hidden relative">
+            {/* Calibration Overlay - show only while calibrating and not complete */}
+            {isCalibrating && !calibrationComplete && <CalibrationOverlay progress={calibrationProgress} />}
+
             {/* Header */}
             <header className="flex justify-between items-center px-2 shrink-0 h-12">
                 <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
-                            <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
-                        </svg>
+                    <div className="w-10 h-10 flex items-center justify-center">
+                        <img
+                            src="/assets/chicken3.png"
+                            alt="Logo"
+                            className="w-full h-full object-contain"
+                            style={{ imageRendering: 'pixelated' }}
+                        />
                     </div>
                     <div>
-                        <h1 className="text-lg font-semibold tracking-tight">FocusFarm</h1>
-                        <p className="text-[10px] text-gray-400">
-                            {!isConnected ? 'Connecting...' : 
-                             isCalibrating ? 'Calibrating...' :
-                             !hasReceivedData ? 'Waiting for data...' :
-                             'Grow your concentration'}
+                        <h1 className="text-2xl font-semibold tracking-tight text-white">FocusFarm</h1>
+                        <p className="text-sm text-white font-medium">
+                            Grow your concentration
                         </p>
                     </div>
                 </div>
-                <div className="flex gap-4 text-gray-400">
+                <div className="flex gap-4" style={{ color: '#54407F' }}>
                     <button
-                        className={`hover:text-white transition-colors ${showStats ? 'text-green-400' : ''}`}
+                        className="hover:text-black transition-colors"
                         onClick={() => setShowStats(!showStats)}
                         title={showStats ? 'Hide Stats' : 'Show Stats'}
+                        style={{ color: showStats ? 'white' : '#54407F' }}
                     >
                         <BarChart3 size={18} />
                     </button>
-                    <button className="hover:text-white transition-colors"><Info size={18} /></button>
-                    <button className="hover:text-white transition-colors"><Settings size={18} /></button>
+                    <button className="hover:text-black transition-colors"><Info size={18} /></button>
+                    <button className="hover:text-black transition-colors"><Settings size={18} /></button>
                 </div>
             </header>
 
             {/* Main Content Grid */}
             <main className={`flex-1 grid ${showStats ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1'} gap-4 min-h-0`}>
                 {/* Farm View (Left - 2 cols) */}
-                <div className={`${showStats ? 'lg:col-span-2' : 'col-span-1'} bg-surface rounded-2xl overflow-hidden border border-white/5 relative h-full`}>
+                <div className={`${showStats ? 'lg:col-span-2' : 'col-span-1'} bg-white/20 rounded-2xl overflow-hidden border border-black/5 relative h-full`}>
                     <FarmView
                         isPlaying={isPlaying}
                         toggleTimer={toggleSession}
@@ -88,6 +97,9 @@ export const DashboardLayout: React.FC = () => {
                             sessionStats={{ ...displaySessionStats, duration: formattedTime }}
                             alphaHistory={displayAlphaHistory}
                             focusTimeMs={displayFocusTimeMs}
+                            statusMessage={statusMessage}
+                            channelValues={channelValues}
+                            channelHistory={channelHistory}
                         />
                     </div>
                 )}

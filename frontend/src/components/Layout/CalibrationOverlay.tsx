@@ -6,7 +6,8 @@ interface CalibrationOverlayProps {
 }
 
 export const CalibrationOverlay: React.FC<CalibrationOverlayProps> = ({ progress }) => {
-    const secondsRemaining = Math.ceil((1 - progress) * 15);
+    // Backend uses 10 seconds for calibration
+    const secondsRemaining = Math.ceil((1 - progress) * 10);
     
     return (
         <div className="absolute inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center">

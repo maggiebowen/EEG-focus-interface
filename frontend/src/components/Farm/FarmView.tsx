@@ -38,6 +38,8 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
     const LAST_PLANT_START = 19 * CORN_STAGGER_SEC;
     const ALL_GROWN_TIME = LAST_PLANT_START + CORN_GROWTH_SEC;
     const SLIDE_DURATION = 2.5;
+    const CHICKEN_SPAWN_INTERVAL = 10; // Spawn a new chicken every 10 seconds
+    const MAX_CHICKENS = 20; // Cap at 20 chickens
 
     return (
         <div className="w-full h-full relative group overflow-hidden flex items-center justify-center"
@@ -160,7 +162,7 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                 <div style={{
                     position: "absolute",
                     right: "5%",
-                    top: "50%",
+                    top: "63%",
                     transform: "translate(0, -50%)",
                     width: "33%", // Increased from 26.25%
                     height: "50%", // Increased from 39.375%
@@ -193,77 +195,265 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                         }}
                     />
 
-                    {/* Egg / Chicken Animation */}
+                    {/* Egg / Chicken Animation - Multiple Chickens */}
                     {elapsedSeconds > ALL_GROWN_TIME && (() => {
                         // Use precise time for smooth animation
                         const preciseElapsedSeconds = elapsedMs / 1000;
-                        const animTime = preciseElapsedSeconds - ALL_GROWN_TIME;
+                        const timeSinceFirstChicken = preciseElapsedSeconds - ALL_GROWN_TIME;
 
-                        // Egg Spawn Logic based on ratios relative to Chicken House
-                        // Hill Container: Width 33% (396px), Height 50% (400px) -> Ratio 0.99 (approx 1:1)
-                        // House Width: 47.6% of Hill Width
-                        // House Height: Auto (Square image) -> Height in px = Width in px
-                        // House Height % of Hill Height = 47.6 * (HillWidth/HillHeight) = 47.6 * (33/50) = 31.42%
+                        // Calculate how many chickens should have spawned (capped at MAX_CHICKENS)
+                        const numChickensSpawned = Math.min(
+                            Math.floor(timeSinceFirstChicken / CHICKEN_SPAWN_INTERVAL) + 1,
+                            MAX_CHICKENS
+                        );
 
-                        // House Position:
-                        // Left: 50% - (47.6%/2) = 26.2%
-                        // Top (Visual): 20% - 31.42% = -11.42% (due to translate -100%)
+                        // Animation timing constants
+                        const IDLE_DURATION = 2;
+                        const WALK_DURATION = 5;
+                        const TOTAL_ANIMATION_TIME = SLIDE_DURATION + IDLE_DURATION + WALK_DURATION;
 
-                        // Egg Offsets (Ratios of House Dimensions):
-                        // X Ratio: 70/150 = 0.4666
-                        // Y Ratio: 107/150 = 0.7133
+                        // Egg spawn position
+                        const startLeft = 50;
+                        const startTop = 5;
+                        const targetTop = startTop + 25;
 
-                        // Egg Start X = 26.2 + (47.6 * 0.4666) = 48.41%
-                        // Egg Start Y = -11.42 + (31.42 * 0.7133) = -11.42 + 22.41 = 10.99%
+                        // Chicken house bounds with 5% padding
+                        // House: left 26.2%, top 20% (visual), width 47.6%, height 31.42%
+                        const houseLeft = 26.2;
+                        const houseTop = 20;
+                        const houseWidth = 47.6;
+                        const houseHeight = 31.42;
+                        const padding = 5;
 
-                        const startLeft = 48.41;
-                        const startTop = 10.99;
+                        const houseExclusionZone = {
+                            left: houseLeft - padding,
+                            right: houseLeft + houseWidth + padding,
+                            top: houseTop - padding,
+                            bottom: houseTop + houseHeight + padding
+                        };
 
-                        // Slide Distance: 25% of House Height
-                        // Dist = 31.42 * 0.25 = 7.855%
-                        const targetTop = startTop + 7.855;
+                        // Track spawned chicken positions to avoid overlaps
+                        const spawnedPositions: Array<{ x: number, y: number }> = [];
 
-                        if (animTime < SLIDE_DURATION) {
-                            // Slide Phase
-                            const progress = animTime / SLIDE_DURATION;
-                            const currentTop = startTop + (targetTop - startTop) * progress;
+                        // Generate random positions with collision avoidance using Best Candidate Algorithm
+                        const getChickenTarget = (chickenIndex: number) => {
+                            // Valid area with 8% padding from edges
+                            const padding = 8;
+                            const xMin = padding;
+                            const xMax = 100 - padding;
+                            const yMin = padding + 10; // Extra offset from top for the house
+                            const yMax = 100 - padding;
 
-                            return (
-                                <img
-                                    src="/assets/Egg_item.png"
-                                    alt="Egg"
-                                    style={{
-                                        position: "absolute",
-                                        width: "10%", height: "auto", // Approx size
-                                        left: `${startLeft}%`,
-                                        top: `${currentTop}%`,
-                                        transform: "translate(-50%, -50%)",
-                                        imageRendering: "pixelated",
-                                        zIndex: 25
-                                    }}
-                                />
-                            );
-                        } else {
-                            // Chicken Phase
-                            const chickenTime = animTime - SLIDE_DURATION;
-                            const isFrame1 = Math.floor(chickenTime / 0.5) % 2 === 0; // Toggle every 0.5s
+                            // Stratified sampling: divide area into a grid and assign each chicken to a cell
+                            // This ensures more even distribution across the hill
+                            const gridCols = 5;
+                            const gridRows = 4;
+                            const totalCells = gridCols * gridRows;
 
-                            return (
-                                <img
-                                    src={isFrame1 ? "/assets/chicken1.png" : "/assets/chicken2.png"}
-                                    alt="Chicken"
-                                    style={{
-                                        position: "absolute",
-                                        width: "15%", height: "auto", // Approx size
-                                        left: `${startLeft}%`,
-                                        top: `${targetTop}%`,
-                                        transform: "translate(-50%, -50%)",
-                                        imageRendering: "pixelated",
-                                        zIndex: 25
-                                    }}
-                                />
-                            );
+                            // Determine which grid cell this chicken belongs to
+                            const cellIndex = chickenIndex % totalCells;
+                            const cellCol = cellIndex % gridCols;
+                            const cellRow = Math.floor(cellIndex / gridCols);
+
+                            // Calculate cell boundaries
+                            const cellWidth = (xMax - xMin) / gridCols;
+                            const cellHeight = (yMax - yMin) / gridRows;
+                            const cellXMin = xMin + cellCol * cellWidth;
+                            const cellXMax = cellXMin + cellWidth;
+                            const cellYMin = yMin + cellRow * cellHeight;
+                            const cellYMax = cellYMin + cellHeight;
+
+                            // Best candidate algorithm within the assigned cell
+                            const numCandidates = 15;
+                            let bestCandidate = null;
+                            let maxMinDistance = -1;
+
+                            // Pseudo-random number generator
+                            const getRand = (seed: number) => {
+                                const x = Math.sin(seed) * 10000;
+                                return x - Math.floor(x);
+                            };
+
+                            for (let i = 0; i < numCandidates; i++) {
+                                // Deterministic seed for this candidate
+                                const seedBase = (chickenIndex * 1000) + i;
+                                const r1 = getRand(seedBase * 12.9898);
+                                const r2 = getRand(seedBase * 78.233);
+
+                                // Random position within the assigned cell
+                                const candidateX = cellXMin + r1 * (cellXMax - cellXMin);
+                                const candidateY = cellYMin + r2 * (cellYMax - cellYMin);
+
+                                // 1. Check Exclusion Zone (Chicken House)
+                                // House is roughly: left 26%, top 20%, width 48%, height 32% (relative to hill div)
+                                // Only check overlap if the candidate is somewhat high up (y < 60)
+                                if (candidateY < 60) {
+                                    if (candidateX >= houseExclusionZone.left && candidateX <= houseExclusionZone.right &&
+                                        candidateY >= houseExclusionZone.top && candidateY <= houseExclusionZone.bottom) {
+                                        continue;
+                                    }
+                                }
+
+                                // 2. Calculate distance to nearest existing chicken
+                                let minDistanceToExisting = Number.MAX_VALUE;
+
+                                if (spawnedPositions.length === 0) {
+                                    minDistanceToExisting = Number.MAX_VALUE;
+                                } else {
+                                    for (const existing of spawnedPositions) {
+                                        const dx = candidateX - existing.x;
+                                        // Adjust dy for aspect ratio if needed, but simple distance is usually fine for distribution
+                                        // Hill aspect ratio is width 33% vs height 50% of parent 3:2. 
+                                        // 33% of 1200 = 396px. 50% of 800 = 400px. Almost square 1:1 in pixels!
+                                        // So percentage distance is roughly isotropic.
+                                        const dy = candidateY - existing.y;
+                                        const dist = Math.sqrt(dx * dx + dy * dy);
+                                        if (dist < minDistanceToExisting) {
+                                            minDistanceToExisting = dist;
+                                        }
+                                    }
+                                }
+
+                                if (minDistanceToExisting > maxMinDistance) {
+                                    maxMinDistance = minDistanceToExisting;
+                                    bestCandidate = { x: candidateX, y: candidateY };
+                                }
+                            }
+
+                            // If we found a valid candidate (even if close to others), use it.
+                            if (bestCandidate) {
+                                spawnedPositions.push(bestCandidate);
+                                return bestCandidate;
+                            }
+
+                            // Fallback: place in center of assigned cell
+                            const fallbackX = cellXMin + cellWidth / 2;
+                            const fallbackY = cellYMin + cellHeight / 2;
+                            spawnedPositions.push({ x: fallbackX, y: fallbackY });
+                            return { x: fallbackX, y: fallbackY };
+                        };
+
+                        // Count chickens that have completed their walk
+                        let completedChickens = 0;
+                        for (let i = 0; i < numChickensSpawned; i++) {
+                            const chickenAnimTime = timeSinceFirstChicken - (i * CHICKEN_SPAWN_INTERVAL);
+                            if (chickenAnimTime >= TOTAL_ANIMATION_TIME) {
+                                completedChickens++;
+                            }
                         }
+
+                        // Render all active chickens
+                        const chickens = [];
+                        for (let i = 0; i < numChickensSpawned; i++) {
+                            const chickenAnimTime = timeSinceFirstChicken - (i * CHICKEN_SPAWN_INTERVAL);
+                            if (chickenAnimTime < 0) continue; // Not spawned yet
+
+                            const target = getChickenTarget(i);
+
+                            if (chickenAnimTime < SLIDE_DURATION) {
+                                // Slide Phase - Egg sliding down
+                                const progress = chickenAnimTime / SLIDE_DURATION;
+                                const currentTop = startTop + (targetTop - startTop) * progress;
+
+                                chickens.push(
+                                    <img
+                                        key={`chicken-${i}`}
+                                        src="/assets/Egg_item.png"
+                                        alt="Egg"
+                                        style={{
+                                            position: "absolute",
+                                            width: "12%", height: "auto",
+                                            left: `${startLeft}%`,
+                                            top: `${currentTop}%`,
+                                            transform: "translate(-50%, -50%)",
+                                            imageRendering: "pixelated",
+                                            zIndex: 25 + i
+                                        }}
+                                    />
+                                );
+                            } else if (chickenAnimTime < SLIDE_DURATION + IDLE_DURATION) {
+                                // Idle Phase 1 - Just hatched, idle animation
+                                const idleTime = chickenAnimTime - SLIDE_DURATION;
+                                const isFrame1 = Math.floor(idleTime / 0.5) % 2 === 0;
+
+                                chickens.push(
+                                    <img
+                                        key={`chicken-${i}`}
+                                        src={isFrame1 ? "/assets/chicken1.png" : "/assets/chicken2.png"}
+                                        alt="Chicken"
+                                        style={{
+                                            position: "absolute",
+                                            width: "15%", height: "auto",
+                                            left: `${startLeft}%`,
+                                            top: `${targetTop}%`,
+                                            transform: "translate(-50%, -50%)",
+                                            imageRendering: "pixelated",
+                                            zIndex: 25 + i
+                                        }}
+                                    />
+                                );
+                            } else if (chickenAnimTime < TOTAL_ANIMATION_TIME) {
+                                // Walking Phase
+                                const walkTime = chickenAnimTime - SLIDE_DURATION - IDLE_DURATION;
+                                const walkProgress = walkTime / WALK_DURATION;
+
+                                // Interpolate position
+                                const currentX = startLeft + (target.x - startLeft) * walkProgress;
+                                const currentY = targetTop + (target.y - targetTop) * walkProgress;
+
+                                // Cycle through walking sprites (chicken3-6)
+                                const walkFrames = [
+                                    "/assets/chicken3.png",
+                                    "/assets/chicken4.png",
+                                    "/assets/chicken5.png",
+                                    "/assets/chicken6.png"
+                                ];
+                                const frameIndex = Math.floor(walkTime / 0.5) % 4;
+
+                                chickens.push(
+                                    <img
+                                        key={`chicken-${i}`}
+                                        src={walkFrames[frameIndex]}
+                                        alt="Chicken Walking"
+                                        style={{
+                                            position: "absolute",
+                                            width: "15%", height: "auto",
+                                            left: `${currentX}%`,
+                                            top: `${currentY}%`,
+                                            transform: "translate(-50%, -50%)",
+                                            imageRendering: "pixelated",
+                                            zIndex: 25 + i
+                                        }}
+                                    />
+                                );
+                            } else {
+                                // Idle Phase 2 - At target, back to idle animation
+                                const idleTime = chickenAnimTime - TOTAL_ANIMATION_TIME;
+                                const isFrame1 = Math.floor(idleTime / 0.5) % 2 === 0;
+
+                                chickens.push(
+                                    <img
+                                        key={`chicken-${i}`}
+                                        src={isFrame1 ? "/assets/chicken1.png" : "/assets/chicken2.png"}
+                                        alt="Chicken"
+                                        style={{
+                                            position: "absolute",
+                                            width: "15%", height: "auto",
+                                            left: `${target.x}%`,
+                                            top: `${target.y}%`,
+                                            transform: "translate(-50%, -50%)",
+                                            imageRendering: "pixelated",
+                                            zIndex: 25 + i
+                                        }}
+                                    />
+                                );
+                            }
+                        }
+
+                        // Store completed chicken count for counter
+                        (window as any).__completedChickens = completedChickens;
+
+                        return <>{chickens}</>;
                     })()}
                 </div>
 
@@ -288,10 +478,10 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        color: "white",
-                        fontFamily: "'Pixelify Sans', sans-serif", // Assuming this font is available globally
+                        color: "#664C5A",
+                        fontFamily: "'Pixelify Sans', sans-serif",
                         fontSize: "1.5rem",
-                        textShadow: "2px 2px 0 #000",
+                        fontWeight: "bold",
                         outline: "none"
                     }}
                 >
@@ -303,14 +493,21 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                     position: "absolute",
                     top: "2%",
                     right: "2%",
+                    backgroundImage: "url('/assets/counter.png')",
+                    backgroundSize: "100% 100%",
+                    backgroundRepeat: "no-repeat",
+                    imageRendering: "pixelated",
+                    padding: "30px 32px",
+                    minWidth: "250px",
                     display: "flex",
                     flexDirection: "column",
+                    alignItems: "center",
                     gap: "8px",
                     fontFamily: "'Pixelify Sans', sans-serif",
                     color: "white",
-                    textShadow: "2px 2px 0 #000",
+                    fontWeight: "regular",
+                    fontSize: "1rem",
                     zIndex: 40,
-                    fontSize: "1.2rem"
                 }}>
                     <div>
                         Plants: {(() => {
@@ -330,7 +527,7 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
                         })()} / 20
                     </div>
                     <div>
-                        Chickens: {elapsedSeconds > ALL_GROWN_TIME + SLIDE_DURATION ? 1 : 0}
+                        Chickens: {(window as any).__completedChickens || 0} / {MAX_CHICKENS}
                     </div>
                 </div>
 
@@ -338,4 +535,3 @@ export const FarmView: React.FC<FarmViewProps> = ({ isPlaying, toggleTimer, elap
         </div>
     );
 };
-

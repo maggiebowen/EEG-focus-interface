@@ -196,17 +196,7 @@ def stream_data_loop():
                         progress = min(elapsed / CALIBRATION_DURATION, 1.0)
                         
                         socketio.emit('calibration_progress', {'progress': progress})
-                        
-                        # Emit placeholder data during calibration so frontend knows we're alive
-                        calib_payload = {
-                            'timestamp': time.time(),
-                            'focus_score': 0,
-                            'z_score': 0,
-                            'raw_alpha': current_alpha,
-                            'bad_channels': bad_channels,
-                            'state': 'CALIBRATING'
-                        }
-                        socketio.emit('eeg_metric', calib_payload)
+                        print(f"→ Emitted calibration_progress: {progress:.2f}")
                         print(f"→ Emitted CALIBRATING data: alpha={current_alpha:.2f}")
                         
                         if int(elapsed * 10) % 10 == 0:
@@ -224,6 +214,7 @@ def stream_data_loop():
                                 print(f"{'='*60}\n")
                                 current_state = NeuroState.RUNNING
                                 socketio.emit('calibration_done', {'mu': mu_baseline, 'sigma': sigma_baseline})
+                                print(f"→ Emitted calibration_done event")
                             else:
                                 print("ERROR: No calibration data collected!")
                                 current_state = NeuroState.IDLE
@@ -253,12 +244,17 @@ def stream_data_loop():
                         payload = {
                             'timestamp': time.time(),
                             'focus_score': percent_score, # Ora è 0-100
-                            'z_score': current_z_score,
-                            'raw_alpha': current_alpha,
-                            'bad_channels': bad_channels,
+                            'eeg_ch1': window_buffer[0].tolist(),
+                            'eeg_ch2': window_buffer[1].tolist(),
+                            'eeg_ch3': window_buffer[2].tolist(),
+                            'eeg_ch4': window_buffer[3].tolist(),
+                            'eeg_ch5': window_buffer[4].tolist(),
+                            'eeg_ch6': window_buffer[5].tolist(),
+                            'eeg_ch7': window_buffer[6].tolist(),
+                            'eeg_ch8': window_buffer[7].tolist(),
                             'state': 'RUNNING'
                         }
-                        print(f"→ RUNNING: Alpha={current_alpha:.2f} | Z={current_z_score:.2f} | Score={percent_score}% | Bad={bad_channels}")
+                        print(f"→ RUNNING: Alpha={current_alpha:.2f} | Z={current_z_score:.2f} | Score={percent_score}% | Bad={bad_channels} | Ch1 samples={window_buffer[0]}")
                         socketio.emit('eeg_metric', payload)
         
         elapsed_loop = time.time() - start_loop
@@ -318,6 +314,6 @@ if __name__ == '__main__':
     try:
         board = KnightBoardServer(serial_port, 8)
         print(f"Server Ready on {serial_port}. Protocol: Alpha Z-Score (uV Scaled).")
-        socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+        socketio.run(app, host='0.0.0.0', port=5001, debug=False)
     except Exception as e:
         print(f"Error: {e}")
